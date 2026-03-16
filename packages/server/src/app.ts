@@ -14,7 +14,11 @@ app.get('/health', (_req, res) => {
 // Root route provides minimal API entry point for developers testing the server
 // Returns basic service info without exposing any sensitive details
 app.get('/', (_req: Request, res: Response) => {
-  res.json({ message: 'Real-time Chat API', status: 'running', version: '1.0.0' });
+  res.json({
+    message: 'Real-time Chat API',
+    status: 'running',
+    version: '1.0.0',
+  });
 });
 
 export default app;
