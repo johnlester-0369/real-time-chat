@@ -86,7 +86,6 @@ export default function NameEntryScreen({ onNameSubmit }: NameEntryScreenProps) 
               }}
               placeholder="e.g. Alex Chen"
               maxLength={NAME_MAX}
-              // eslint-disable-next-line jsx-a11y/no-autofocus
               autoFocus
               autoComplete="off"
               aria-describedby={error ? 'name-error' : undefined}
