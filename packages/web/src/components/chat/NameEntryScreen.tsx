@@ -1,12 +1,9 @@
 import { useState } from 'react'
 import { MessageCircle } from 'lucide-react'
 
-// ─── Validation ──────────────────────────────────────────────────────────────
-
 const NAME_MIN = 2
 const NAME_MAX = 32
 
-// Centralised so the same rules apply on change, blur, and submit
 function validateName(raw: string): string {
   const v = raw.trim()
   if (!v) return 'Display name is required.'
@@ -15,18 +12,14 @@ function validateName(raw: string): string {
   return ''
 }
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
 interface NameEntryScreenProps {
   onNameSubmit: (name: string) => void
+  isConnected: boolean
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
-
-export default function NameEntryScreen({ onNameSubmit }: NameEntryScreenProps) {
+export default function NameEntryScreen({ onNameSubmit, isConnected }: NameEntryScreenProps) {
   const [value, setValue] = useState('')
   const [error, setError] = useState('')
-  // Only show errors after the user has interacted to avoid nagging on first render
   const [touched, setTouched] = useState(false)
 
   function handleSubmit() {
@@ -36,7 +29,6 @@ export default function NameEntryScreen({ onNameSubmit }: NameEntryScreenProps) 
       setTouched(true)
       return
     }
-    // Trim here — trimmed name stored in App, not the raw input value
     onNameSubmit(value.trim())
   }
 
@@ -44,7 +36,6 @@ export default function NameEntryScreen({ onNameSubmit }: NameEntryScreenProps) 
     <div className="flex flex-col items-center justify-center min-h-screen bg-surface px-4">
       <div className="w-full max-w-sm">
 
-        {/* ── Brand mark ─────────────────────────────────────────────────── */}
         <div className="flex flex-col items-center gap-4 mb-8">
           <div className="w-16 h-16 rounded-2xl bg-primary-container flex items-center justify-center shadow-elevation-2">
             <MessageCircle className="w-8 h-8 text-on-primary-container" aria-hidden="true" />
@@ -59,7 +50,6 @@ export default function NameEntryScreen({ onNameSubmit }: NameEntryScreenProps) 
           </div>
         </div>
 
-        {/* ── Entry card ─────────────────────────────────────────────────── */}
         <div className="bg-surface-container-low rounded-3xl p-6 shadow-elevation-1 flex flex-col gap-5">
 
           <div className="flex flex-col gap-1.5">
@@ -76,7 +66,6 @@ export default function NameEntryScreen({ onNameSubmit }: NameEntryScreenProps) 
               value={value}
               onChange={e => {
                 setValue(e.target.value)
-                // Progressive validation: only re-validate after first blur/submit attempt
                 if (touched) setError(validateName(e.target.value))
               }}
               onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }}
@@ -100,7 +89,6 @@ export default function NameEntryScreen({ onNameSubmit }: NameEntryScreenProps) 
               ].join(' ')}
             />
 
-            {/* Error + char counter row — fixed height prevents layout shift */}
             <div className="flex items-start justify-between gap-2 min-h-[1.125rem]">
               {error
                 ? (
@@ -117,6 +105,15 @@ export default function NameEntryScreen({ onNameSubmit }: NameEntryScreenProps) 
                 {value.length}/{NAME_MAX}
               </span>
             </div>
+          </div>
+
+          {/* Connection status indicator — decoupled from button so the user can
+              still submit their name while offline; useSocket auto-joins on reconnect */}
+          <div className="flex items-center justify-center gap-1.5 text-label-sm">
+            <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-success' : 'bg-warning animate-pulse'}`} />
+            <span className={isConnected ? 'text-success' : 'text-on-surface-variant'}>
+              {isConnected ? 'Server connected' : 'Connecting to server...'}
+            </span>
           </div>
 
           <button
