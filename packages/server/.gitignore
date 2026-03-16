@@ -11,3 +11,6 @@ node_modules
 dist
 *.local
 .env
+
+# my own steering folder
+.codebase_history
