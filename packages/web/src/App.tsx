@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import Avatar from '@/components/ui/data-display/Avatar'
 import IconButton from '@/components/ui/buttons/IconButton'
 import { useTheme } from '@/contexts/ThemeContext'
-import { Hash, Moon, Send, Sun, Users } from 'lucide-react'
+import { Hash, Moon, Send, Sun } from 'lucide-react'
 import Status from '@/components/ui/data-display/Status'
 import NameEntryScreen from '@/components/chat/NameEntryScreen'
 
@@ -125,7 +125,6 @@ export default function App() {
           {/* Online count — hidden on very small screens where space is tight */}
           <div className="hidden sm:flex items-center gap-1.5 text-on-surface-variant">
             <Status.Indicator colorPalette="success" size="sm" pulse />
-            <Users className="w-4 h-4 shrink-0" aria-hidden="true" />
             <span className="text-label-md">{ROOM_USERS.length} online</span>
           </div>
 
