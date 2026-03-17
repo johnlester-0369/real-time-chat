@@ -60,6 +60,15 @@ export default function App() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    // Reset to 'auto' first so the element can shrink when text is deleted —
+    // scrollHeight only expands when height is already constrained to a fixed value
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [draft])
+
   function handleNameSubmit(name: string) {
     const userId = crypto.randomUUID()
     // Write identity to URL so page refresh restores the session automatically.
