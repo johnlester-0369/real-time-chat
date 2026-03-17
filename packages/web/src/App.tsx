@@ -122,7 +122,7 @@ export default function App() {
       )}
 
       {/* Header */}
-      <header className="flex items-center justify-between px-4 h-14 shrink-0 bg-surface-container-low border-b border-outline-variant shadow-elevation-1 z-sticky">
+      <header className="flex items-center justify-between px-4 h-14 shrink-0 bg-surface border-b border-outline-variant z-sticky">
         <div className="flex items-center gap-2 min-w-0">
           <Hash className="w-5 h-5 text-on-surface-variant shrink-0" aria-hidden="true" />
           <span className="text-title-md text-on-surface font-medium">general</span>
