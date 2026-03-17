@@ -15,14 +15,17 @@
 // verbatimModuleSyntax: type-only imports must use 'import type'
 import type { Server as SocketServer, Socket } from 'socket.io';
 import type {
-     Message,
-    UserRecord,
-    ClientUser,
-    Room,
-    PendingDisconnectEntry,
-    ServerToClientEvents,
-    ClientToServerEvents,
+  Message,
+  ClientUser,
+  ServerToClientEvents,
+  ClientToServerEvents,
 } from '@/socket/dtos/socket.dto.js';
+// Internal server models are not wire contracts — import from models/ not dtos/
+import type {
+  UserRecord,
+  Room,
+  PendingDisconnectEntry,
+} from '@/socket/models/room.model.js';
 
 // ============================================================================
 // INTERNAL TYPES

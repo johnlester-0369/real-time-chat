@@ -1,6 +1,10 @@
-// Server-side transport boundary types for the socket layer.
-// Mirrors the web's dtos/chat.dto.ts pattern — types live at the wire boundary,
-// not in domain logic. "dto" signals these are transport contracts, not internal models.
+// Server-side wire-contract types for the socket layer.
+// Only types that cross the client–server boundary live here: serialisable message
+// shapes, the projected client-safe user view, and the typed Socket.IO event maps.
+//
+// Internal server models (UserRecord, Room, PendingDisconnectEntry) live in
+// models/room.model.ts — they describe in-memory state, not API contracts.
+//
 // Must stay in sync with the web's dtos/chat.dto.ts manually until a shared
 // types package is introduced across the monorepo.
 
@@ -13,19 +17,8 @@ export interface Message {
   timestamp: Date;
 }
 
-// socketId is the current transport connection — changes on every browser refresh/reconnect.
-// userId is the stable client-generated UUID from URL params — persists across sessions.
-// Separating them lets us correlate a returning client without relying on a mutable name.
-export interface UserRecord {
-  socketId: string;
-  userId: string;
-  name: string;
-  color: string;
-  joinedAt: Date;
-}
-
-// Deduplicated, client-safe projection of UserRecord — strips socketId (internal transport detail)
-// and remaps userId → id to match the web's ChatUser shape
+// Deduplicated, client-safe user projection sent over the wire — strips socketId
+// (internal transport detail) and remaps userId → id to match the web's ChatUser shape
 export interface ClientUser {
   id: string;
   name: string;
@@ -33,22 +26,8 @@ export interface ClientUser {
   joinedAt: Date;
 }
 
-export interface Room {
-  name: string;
-  messages: Message[]; // not readonly — ring-buffer reassignment happens in RoomService.handleMessage
-  users: Map<string, UserRecord>; // keyed by socketId for O(1) disconnect lookup
-}
-
-// Co-located with domain types so services can reference the shape without creating
-// a circular dependency on the state module (avoids tight coupling to implementation)
-export interface PendingDisconnectEntry {
-  timer: ReturnType<typeof setTimeout>;
-  user: UserRecord;
-}
-
-// Typed event maps consumed by Socket.IO's generic Server<C,S> and Socket<C,S>.
-// C = events the server listens to (client → server)
-// S = events the server emits (server → client)
+// Typed event maps for Socket.IO's generic Server<C,S> and Socket<C,S>.
+// C = events the server listens to (client → server); S = events the server emits (server → client)
 export interface ServerToClientEvents {
   'room:history': (data: { room: string; messages: Message[]; users: ClientUser[] }) => void;
   'room:users': (users: ClientUser[]) => void;

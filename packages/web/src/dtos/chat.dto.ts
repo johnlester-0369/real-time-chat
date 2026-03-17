@@ -1,7 +1,9 @@
-// Client–server boundary contracts: message shapes, user types, and Socket.IO
-// event maps shared between the React layer and the wire protocol.
-// "dto" signals these types live at the transport boundary, not in domain logic.
-// Must stay in sync with server-side interfaces manually until a shared
+// Client–server wire-contract types: only types that cross the network boundary live here.
+// Message shapes, the client-safe user projection, and the typed Socket.IO event maps.
+// "dto" signals these are transport contracts, not application-state models.
+//
+// Client-side state aggregates (e.g. Room) live in models/chat.model.ts.
+// Must stay in sync with server-side dtos/socket.dto.ts manually until a shared
 // types package is introduced across the monorepo.
 
 // Mirrors server-side Message interface
@@ -22,12 +24,6 @@ export interface ChatUser {
   name: string;
   color: UserColor;
   joinedAt: Date;
-}
-
-export interface Room {
-  name: string;
-  users: ChatUser[];
-  messages: Message[];
 }
 
 // WebSocket event payload types
