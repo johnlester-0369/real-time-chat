@@ -49,24 +49,24 @@ export function useSocket(user?: { name: string; color: UserColor } | null) {
 
     const onRoomHistory = (data: { room: string; messages: Message[]; users: ChatUser[] }) => {
       setMessages(data.messages.map(m => ({
-        ...m,
-        timestamp: new Date(m.timestamp),
-      })));
-      setUsers(data.users);
-    };
+      ...m,
+      timestamp: new Date(m.timestamp),
+    })));
+    setUsers(data.users.map(u => ({ ...u, joinedAt: new Date(u.joinedAt) })));
+  };
 
-    const onMessageNew = (message: Message) => {
+  const onMessageNew = (message: Message) => {
       setMessages(prev => [
         ...prev,
         { ...message, timestamp: new Date(message.timestamp) }
       ]);
-    };
+  };
 
-    const onRoomUsers = (updatedUsers: ChatUser[]) => {
-      setUsers(updatedUsers);
-    };
+  const onRoomUsers = (updatedUsers: ChatUser[]) => {
+    setUsers(updatedUsers.map(u => ({ ...u, joinedAt: new Date(u.joinedAt) })));
+  };
 
-    const onError = (data: { message: string }) => {
+  const onError = (data: { message: string }) => {
       console.error('WebSocket error:', data.message);
       setError(data.message);
     };
