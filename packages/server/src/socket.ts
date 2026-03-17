@@ -216,11 +216,27 @@ export default function setupSocketServer(httpServer: HttpServer) {
       const user = generalRoom.users.get(socket.id);
       if (user) {
         generalRoom.users.delete(socket.id);
+
+        // Cancel any existing pending disconnect for this userId — multiple tabs sharing
+        // the same URL/userId each produce their own socket, and rapid sequential closes
+        // would leave a stale timer from the first close firing while the second is pending
+        const existing = pendingDisconnects.get(user.userId);
+        if (existing) clearTimeout(existing.timer);
+
         // Defer leave broadcast — browser refresh reconnects within the grace window,
         // so we only broadcast "left" if the user doesn't rejoin in time
         const timer = setTimeout(() => {
-          pendingDisconnects.delete(user.name);
-          io.emit('room:users', Array.from(generalRoom.users.values()));
+          pendingDisconnects.delete(user.userId);
+
+          // Guard against multi-tab: generalRoom.users is keyed by socketId, so closing
+          // one of N tabs deletes only that socket — the userId may still be present on
+          // another socket. Only broadcast "left" when the userId is completely gone.
+          const hasActiveSocket = Array.from(generalRoom.users.values()).some(
+            u => u.userId === user.userId
+          );
+          if (hasActiveSocket) return;
+
+          io.emit('room:users', toClientUsers(generalRoom.users));
           const leaveMsg: Message = {
             id: crypto.randomUUID(),
             userId: 'system',
