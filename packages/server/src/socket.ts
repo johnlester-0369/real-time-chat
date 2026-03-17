@@ -248,7 +248,9 @@ export default function setupSocketServer(httpServer: HttpServer) {
           generalRoom.messages.push(leaveMsg);
           io.emit('message:new', leaveMsg);
         }, RECONNECT_GRACE_MS);
-        pendingDisconnects.set(user.name, { timer, user });
+        // Key by UUID — the reconnect handler in user:join looks up pendingDisconnects
+        // by the same UUID from URL params, so this must match
+        pendingDisconnects.set(user.userId, { timer, user });
       }
       console.log(`User disconnected: ${socket.id}`);
     });
