@@ -4,7 +4,7 @@ import type { Message, ChatUser, UserColor, ServerToClientEvents, ClientToServer
 
 let globalSocket: Socket<ServerToClientEvents, ClientToServerEvents> | null = null;
 
-export function useSocket(user?: { name: string; color: UserColor } | null) {
+export function useSocket(user?: { userId: string; name: string; color: UserColor } | null) {
   const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [error, setError] = useState<string | null>(null);
