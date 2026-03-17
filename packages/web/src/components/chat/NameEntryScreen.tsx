@@ -15,9 +15,20 @@ function validateName(raw: string): string {
 interface NameEntryScreenProps {
   onNameSubmit: (name: string) => void
   isConnected: boolean
+  // Server-side join rejection error (e.g. name already taken) — surfaced via useSocket's error event
+  serverError?: string | null
+  onClearServerError?: () => void
+  // Live count from room:history so the user can see activity before joining
+  onlineCount?: number
 }
 
-export default function NameEntryScreen({ onNameSubmit, isConnected }: NameEntryScreenProps) {
+export default function NameEntryScreen({
+  onNameSubmit,
+  isConnected,
+  serverError,
+  onClearServerError,
+  onlineCount = 0,
+}: NameEntryScreenProps) {
   const [value, setValue] = useState('')
   const [error, setError] = useState('')
   const [touched, setTouched] = useState(false)
