@@ -1,8 +1,8 @@
 // .js extension required — nodenext moduleResolution resolves to .ts at compile time
 // but the emitted JS and Node's ESM loader both need the .js reference
 import type { Server as HttpServer } from 'http';
-import { initSocketServer } from './lib/socket-server.js';
-import { roomService } from './services/room.service.js';
+import { initSocketServer } from '@/socket/lib/socket-server.js';
+import { roomService } from '@/socket/services/room.service.js';
 
 // Public API surface mirrors the original export — server.ts requires no signature change.
 // Internal implementation now delegates entirely to lib/ (SocketServer lifecycle + CORS)

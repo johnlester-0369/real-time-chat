@@ -12,7 +12,7 @@
 // .js extension required — nodenext moduleResolution emits .js references
 import type { Server as HttpServer } from 'http';
 import { Server as SocketServer } from 'socket.io';
-import type { ServerToClientEvents, ClientToServerEvents } from '../dtos/socket.dto.js';
+import type { ServerToClientEvents, ClientToServerEvents } from '@/socket/dtos/socket.dto.js';
 
 // ============================================================================
 // TYPES
