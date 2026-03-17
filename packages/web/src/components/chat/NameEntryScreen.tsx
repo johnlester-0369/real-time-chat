@@ -90,27 +90,27 @@ export default function NameEntryScreen({
               maxLength={NAME_MAX}
               autoFocus
               autoComplete="off"
-              aria-describedby={error ? 'name-error' : undefined}
-              aria-invalid={error ? true : undefined}
+              aria-describedby={(serverError ?? error) ? 'name-error' : undefined}
+              aria-invalid={(serverError ?? error) ? true : undefined}
               className={[
                 'bg-surface-container rounded-xl px-4 py-3 text-body-md text-on-surface w-full',
                 'placeholder:text-on-surface-variant border transition-all duration-fast',
                 'focus:outline-none focus:ring-1',
-                error
+                (serverError ?? error)
                   ? 'border-error focus:border-error focus:ring-error'
                   : 'border-outline-variant focus:border-primary focus:ring-primary',
               ].join(' ')}
             />
 
             <div className="flex items-start justify-between gap-2 min-h-[1.125rem]">
-              {error
+              {(serverError ?? error)
                 ? (
                     <span
                       id="name-error"
                       role="alert"
                       className="text-label-sm text-error"
                     >
-                      {error}
+                      {serverError ?? error}
                     </span>
                   )
                 : <span aria-hidden="true" />}
