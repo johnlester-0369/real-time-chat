@@ -5,8 +5,8 @@ import { useTheme } from '@/contexts/ThemeContext'
 import { Hash, Moon, Send, Sun, Wifi, WifiOff } from 'lucide-react'
 import Status from '@/components/ui/data-display/Status'
 import NameEntryScreen from '@/components/chat/NameEntryScreen'
-import { useSocket } from '@/hooks/useSocket'
-import type { Message, UserColor } from '@/dtos/chat.dto'
+import { useSocket } from '@/chat'
+import type { Message, UserColor } from '@/chat'
 
 // Read identity from URL query params — set by handleNameSubmit on first join.
 // URL params survive page refresh without touching localStorage, and the UUID is
