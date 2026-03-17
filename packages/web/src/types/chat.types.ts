@@ -16,6 +16,7 @@ export interface ChatUser {
   id: string;
   name: string;
   color: UserColor;
+  joinedAt: Date;
 }
 
 export interface Room {
