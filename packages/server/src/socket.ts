@@ -55,12 +55,35 @@ const generalRoom: Room = {
   users: new Map(),
 };
 
+// Cross-session user store keyed by client UUID — preserves joinedAt and reserves the name
+// for returning users whose grace period has already expired (full page close and reopen)
+const userRegistry = new Map<string, { name: string; color: string; joinedAt: Date }>();
+
 // Grace period prevents "left/joined" spam when browser refresh causes rapid disconnect-reconnect
 const RECONNECT_GRACE_MS = 5_000;
+// Keyed by client UUID — UUID is immutable and collision-free; name-keyed was fragile
+// under name changes and had O(n) identity lookup
 const pendingDisconnects = new Map<string, {
   timer: ReturnType<typeof setTimeout>;
-  user: { id: string; name: string; color: string; joinedAt: Date };
+  user: UserRecord;
 }>();
+
+// Deduplicate by userId before sending to clients — generalRoom.users is keyed by socketId,
+// so a user with N open tabs has N entries in the map. The client counts users.length for the
+// "X online" display, so emitting all socket entries inflates the count. Last-write-wins on
+// duplicate userId is fine because all tabs share the same name/color/joinedAt.
+function toClientUsers(users: Map<string, UserRecord>) {
+  const unique = new Map<string, { id: string; name: string; color: string; joinedAt: Date }>();
+  for (const u of users.values()) {
+    unique.set(u.userId, {
+      id: u.userId,
+      name: u.name,
+      color: u.color,
+      joinedAt: u.joinedAt,
+    });
+  }
+  return Array.from(unique.values());
+}
 
 export default function setupSocketServer(httpServer: HttpServer) {
   const io = new SocketServer(httpServer, {
