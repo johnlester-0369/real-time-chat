@@ -1,3 +1,7 @@
+// Must be the very first import — ESM static imports are hoisted, so placing this
+// first guarantees process.env is populated before app.ts and socket-server.ts evaluate
+import 'dotenv/config';
+
 // .js extension required — nodenext moduleResolution resolves to .ts at compile time
 // but the emitted JS and Node's ESM loader both need the .js reference
 import app from '@/app.js';
