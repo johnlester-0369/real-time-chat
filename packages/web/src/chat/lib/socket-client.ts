@@ -41,11 +41,17 @@ let instance: AppSocket | null = null;
  *
  * Lazy init means no connection is opened until the first component that needs
  * a socket actually mounts — avoids wasting a TCP handshake on pages that
- * never use the chat feature.
+ * without triggering the socket connection prematurely
  */
 export function getSocketClient(): AppSocket {
   if (!instance) {
-    instance = io('http://localhost:3000', {
+    // Resolved at build time by Vite from .env.development / .env.production.
+    // Throws at startup rather than silently connecting to undefined — fast-fail
+    // surfaces misconfigured deployments immediately instead of producing cryptic
+    // "failed to connect" errors that are hard to trace back to a missing env var.
+    const socketUrl = import.meta.env.VITE_SOCKET_URL as string | undefined;
+    if (!socketUrl) throw new Error('VITE_SOCKET_URL is not defined. Check your .env.development or .env.production file.');
+    instance = io(socketUrl, {
       // Credentials required for cross-origin cookie-based auth (CORS pre-flight)
       withCredentials: true,
       // autoConnect: true so the connection opens immediately on first call;
