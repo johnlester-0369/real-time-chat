@@ -159,7 +159,7 @@ export default function App() {
         <div className="max-w-3xl mx-auto px-3 sm:px-6 py-4 flex flex-col gap-3">
 
           {messages.map((msg, idx) => {
-            const isMe = isMessageFromMe(msg, userName)
+            const isMe = isMessageFromMe(msg, userIdentity.userId)
             const prevUser = idx > 0 ? messages[idx - 1]?.userId : null
             const isGrouped = prevUser === msg.userId
 
