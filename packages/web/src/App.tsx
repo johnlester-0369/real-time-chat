@@ -197,7 +197,7 @@ export default function App() {
                   {!isGrouped && (
                     <div className={`flex items-baseline gap-2 px-1 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                       <span className="text-label-md font-medium text-on-surface">
-                        {isMe ? userName : msg.userName}
+                        {isMe ? userIdentity.name : msg.userName}
                       </span>
                       <span className="text-label-sm text-on-surface-variant">
                         {formatTime(new Date(msg.timestamp))}
