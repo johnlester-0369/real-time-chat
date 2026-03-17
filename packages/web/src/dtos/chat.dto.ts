@@ -1,5 +1,10 @@
-// Mirrors server-side Message interface — must stay in sync manually until
-// we set up a shared types package
+// Client–server boundary contracts: message shapes, user types, and Socket.IO
+// event maps shared between the React layer and the wire protocol.
+// "dto" signals these types live at the transport boundary, not in domain logic.
+// Must stay in sync with server-side interfaces manually until a shared
+// types package is introduced across the monorepo.
+
+// Mirrors server-side Message interface
 export interface Message {
   id: string;
   userId: string;
