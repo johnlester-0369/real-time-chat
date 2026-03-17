@@ -102,10 +102,9 @@ export default function App() {
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSendMessage()
-    }
+    // Enter now inserts a newline — browser default textarea behavior is preserved.
+    // Message dispatch is send-button-only; no keyboard shortcut to avoid accidental sends.
+    void e
   }
 
   return (
