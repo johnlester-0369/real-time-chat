@@ -234,7 +234,7 @@ export default function App() {
       </main>
 
       {/* Input bar */}
-      <footer className="shrink-0 border-t border-outline-variant bg-surface-container-low">
+      <footer className="shrink-0 border-t border-outline-variant bg-surface">
         <div className="max-w-3xl mx-auto px-3 sm:px-6 py-3">
 
           <div className={[
