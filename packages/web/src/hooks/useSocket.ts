@@ -4,7 +4,7 @@ import type { Message, ChatUser, UserColor, ServerToClientEvents, ClientToServer
 
 let globalSocket: Socket<ServerToClientEvents, ClientToServerEvents> | null = null;
 
-export function useSocket(user?: { name: string; color: UserColor } | null) {
+export function useSocket(user?: { userId: string; name: string; color: UserColor } | null) {
   const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -102,15 +102,18 @@ export function useSocket(user?: { name: string; color: UserColor } | null) {
     if (socketRef.current && isConnected && text.trim()) {
       socketRef.current.emit('message:send', { text: text.trim() });
     } else if (!isConnected) {
-      setError('Cannot send message: not connected');
     }
   }, [isConnected]);
+
+  // Allow callers to dismiss socket errors — needed when retrying with a different name after server rejection
+  const clearError = useCallback(() => setError(null), []);
 
   return {
     isConnected,
     messages,
     users,
     sendMessage,
+    clearError,
     error,
   };
 }
