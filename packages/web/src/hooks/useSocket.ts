@@ -102,15 +102,18 @@ export function useSocket(user?: { userId: string; name: string; color: UserColo
     if (socketRef.current && isConnected && text.trim()) {
       socketRef.current.emit('message:send', { text: text.trim() });
     } else if (!isConnected) {
-      setError('Cannot send message: not connected');
     }
   }, [isConnected]);
+
+  // Allow callers to dismiss socket errors — needed when retrying with a different name after server rejection
+  const clearError = useCallback(() => setError(null), []);
 
   return {
     isConnected,
     messages,
     users,
     sendMessage,
+    clearError,
     error,
   };
 }
