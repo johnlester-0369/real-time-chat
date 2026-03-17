@@ -122,11 +122,19 @@ export default function NameEntryScreen({
 
           {/* Connection status indicator — decoupled from button so the user can
               still submit their name while offline; useSocket auto-joins on reconnect */}
-          <div className="flex items-center justify-center gap-1.5 text-label-sm">
-            <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-success' : 'bg-warning animate-pulse'}`} />
-            <span className={isConnected ? 'text-success' : 'text-on-surface-variant'}>
-              {isConnected ? 'Server connected' : 'Connecting to server...'}
-            </span>
+          <div className="flex items-center justify-center gap-2 text-label-sm">
+            <div className="flex items-center gap-1.5">
+              <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-success' : 'bg-warning animate-pulse'}`} />
+              <span className={isConnected ? 'text-success' : 'text-on-surface-variant'}>
+                {isConnected ? 'Server connected' : 'Connecting to server...'}
+              </span>
+            </div>
+            {/* Show online presence before joining — room:history delivers current users on connect */}
+            {isConnected && (
+              <span className="text-on-surface-variant">
+                · {onlineCount} online
+              </span>
+            )}
           </div>
 
           <button
