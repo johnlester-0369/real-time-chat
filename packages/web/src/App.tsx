@@ -257,7 +257,7 @@ export default function App() {
               aria-label="Send message"
               variant={draft.trim() && isConnected ? 'primary' : 'text'}
               size="sm"
-              disabled={!isConnected}
+              disabled={!isConnected || !draft.trim()}
               onClick={handleSendMessage}
             />
           </div>
