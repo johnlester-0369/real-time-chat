@@ -253,7 +253,7 @@ export default function App() {
           ].join(' ')}>
             <textarea
               ref={textareaRef}
-              className="flex-1 bg-transparent resize-none text-body-md text-on-surface placeholder:text-on-surface-variant outline-none min-h-[24px] max-h-32 py-0.5 leading-normal disabled:opacity-50"
+              className="flex-1 bg-transparent resize-none text-body-md text-on-surface placeholder:text-on-surface-variant outline-none min-h-[24px] py-0.5 leading-normal disabled:opacity-50"
               placeholder={isConnected ? "Message #general" : "Reconnecting..."}
               value={draft}
               rows={1}
