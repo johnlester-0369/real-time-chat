@@ -78,6 +78,8 @@ export default function NameEntryScreen({
               onChange={e => {
                 setValue(e.target.value)
                 if (touched) setError(validateName(e.target.value))
+                // Clear server-side name-taken error so the user can attempt a different name cleanly
+                onClearServerError?.()
               }}
               onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }}
               onBlur={() => {
