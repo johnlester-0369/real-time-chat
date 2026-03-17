@@ -274,7 +274,7 @@ export default function App() {
           </div>
 
           <p className="text-label-sm text-on-surface-variant text-center mt-2 select-none">
-            Public room · Enter to send · Shift+Enter for new line
+            Public room · Enter for new line · Send button to send
             {!isConnected && <span className="block text-warning">· Offline — messages will be sent when reconnected</span>}
           </p>
         </div>
