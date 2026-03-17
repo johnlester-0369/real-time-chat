@@ -194,7 +194,9 @@ export default function setupSocketServer(httpServer: HttpServer) {
 
       const message: Message = {
         id: crypto.randomUUID(),
-        userId: user.id,
+        // Client UUID as message author — the client's isMessageFromMe checks this field,
+        // so it must be the stable UUID, not socket.id which changes on every reconnect
+        userId: user.userId,
         userName: user.name,
         userColor: user.color,
         text: data.text,
