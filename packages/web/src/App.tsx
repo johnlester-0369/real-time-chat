@@ -190,31 +190,34 @@ export default function App() {
                       <Avatar.Fallback />
                     </Avatar.Root>
                   )}
-                </div>
+              </div>
 
-                <div className={`flex flex-col gap-0.5 max-w-[75%] sm:max-w-sm md:max-w-md ${isMe ? 'items-end' : 'items-start'}`}>
-
-                  {!isGrouped && (
-                    <div className={`flex items-baseline gap-2 px-1 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                      <span className="text-label-md font-medium text-on-surface">
+              <div className={`flex flex-col gap-0.5 max-w-[75%] sm:max-w-sm md:max-w-md ${isMe ? 'items-end' : 'items-start'}`}>
+                {/* min-w-0 prevents flex item from refusing to shrink below intrinsic content size */}
+                {!isGrouped && (
+                  <div className={`flex items-baseline gap-2 px-1 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                    <span className="text-label-md font-medium text-on-surface">
                         {isMe ? userIdentity.name : msg.userName}
                       </span>
                       <span className="text-label-sm text-on-surface-variant">
                         {formatTime(new Date(msg.timestamp))}
                       </span>
-                    </div>
-                  )}
-
-                  <div
-                    className={[
-                      'px-3.5 py-2 text-body-md break-words leading-relaxed',
-                      isMe
-                        ? 'bg-primary text-on-primary rounded-2xl rounded-br-sm'
-                        : 'bg-surface-container-high text-on-surface rounded-2xl rounded-bl-sm',
-                    ].join(' ')}
-                  >
-                    {msg.text}
                   </div>
+                )}
+
+                {/* Responsive text wrapping: break-all for mobile (aggressive, prevents overflow), 
+                    break-words for sm+ (preserves word boundaries when space allows).
+                    whitespace-pre-wrap respects user-entered newlines while still wrapping. */}
+                <div
+                  className={[
+                    'px-3.5 py-2 text-body-md break-all sm:break-words whitespace-pre-wrap leading-relaxed min-w-0',
+                    isMe
+                      ? 'bg-primary text-on-primary rounded-2xl rounded-br-sm'
+                      : 'bg-surface-container-high text-on-surface rounded-2xl rounded-bl-sm',
+                  ].join(' ')}
+                >
+                  {msg.text}
+                </div>
 
                   {isGrouped && (
                     <span className="text-label-sm text-on-surface-variant px-1">
