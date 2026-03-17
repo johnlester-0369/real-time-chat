@@ -1,112 +1,161 @@
+/**
+ * useSocket Hook
+ *
+ * Orchestrates React state for the real-time chat connection.
+ * Delegates all socket lifecycle and protocol concerns to the service layer:
+ *   - lib/socket-client.ts  → owns the singleton Socket.IO connection
+ *   - services/socket.service.ts → owns all emit/subscribe calls
+ *
+ * This hook is deliberately limited to React state transitions and effect
+ * lifecycle so it stays testable with a mocked socketService.
+ *
+ * @module hooks/useSocket
+ */
+
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { io, Socket } from 'socket.io-client';
-import type { Message, ChatUser, UserColor, ServerToClientEvents, ClientToServerEvents } from '@/types/chat.types';
+import { socketService } from '@/services/socket.service';
+import type { Message, ChatUser, UserColor } from '@/dtos/chat.dto';
 
-let globalSocket: Socket<ServerToClientEvents, ClientToServerEvents> | null = null;
+// ============================================================================
+// TYPES
+// ============================================================================
 
-export function useSocket(user?: { userId: string; name: string; color: UserColor } | null) {
+export interface UseSocketUser {
+  userId: string;
+  name: string;
+  color: UserColor;
+}
+
+export interface UseSocketReturn {
+  isConnected: boolean;
+  messages: Message[];
+  users: ChatUser[];
+  sendMessage: (text: string) => void;
+  clearError: () => void;
+  error: string | null;
+}
+
+// ============================================================================
+// HOOK
+// ============================================================================
+
+/**
+ * Connects to the chat server and exposes reactive state for the calling component.
+ *
+ * Pass a user object to join the room. Passing null/undefined keeps the socket
+ * alive but defers the join — used on the NameEntryScreen before identity is known.
+ */
+export function useSocket(user?: UseSocketUser | null): UseSocketReturn {
   const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [users, setUsers] = useState<ChatUser[]>([]);
-  const socketRef = useRef<typeof globalSocket>(globalSocket);
+
+  // Refs track values that must be accessible inside stable callbacks without
+  // causing effect re-runs — avoids stale closure issues in onConnect
   const userRef = useRef(user);
   const hasJoinedRef = useRef(false);
 
-  // Keep user ref in sync with prop — needed for connect handler to access latest user
+  // Keep userRef current on every render so the connect handler always sees
+  // the latest user object even if it fires after a prop update
   useEffect(() => {
     userRef.current = user;
   }, [user]);
 
+  // --------------------------------------------------------------------------
+  // SOCKET EVENT HANDLERS (defined outside subscribe so refs are stable)
+  // --------------------------------------------------------------------------
+
   useEffect(() => {
-    if (!socketRef.current) {
-      socketRef.current = io('http://localhost:3000', {
-        withCredentials: true,
-        autoConnect: true,
-      });
-      globalSocket = socketRef.current;
-    }
+    const unsubscribe = socketService.subscribe({
+      onConnect() {
+        console.log('WebSocket connected');
+        setIsConnected(true);
+        setError(null);
+        // Reset join flag on every reconnect so the join handshake replays
+        // after a server restart or network drop — without this, the user
+        // would be invisible in the room after reconnection
+        hasJoinedRef.current = false;
+        if (userRef.current && !hasJoinedRef.current) {
+          socketService.join(userRef.current);
+          hasJoinedRef.current = true;
+        }
+      },
 
-    const socket = socketRef.current;
+      onDisconnect() {
+        console.log('WebSocket disconnected');
+        setIsConnected(false);
+        hasJoinedRef.current = false;
+      },
 
-    const onConnect = () => {
-      console.log('WebSocket connected');
-      setIsConnected(true);
-      setError(null);
-      hasJoinedRef.current = false;
-      // Join immediately if we have user data — otherwise wait for user effect to trigger join
-      if (userRef.current && !hasJoinedRef.current) {
-        socket.emit('user:join', userRef.current);
-        hasJoinedRef.current = true;
-      }
-    };
+      onRoomHistory(data) {
+        // Coerce ISO timestamp strings to Date objects — the server serialises
+        // Date as string over JSON; keeping Dates in state avoids repeated
+        // parsing on every render cycle
+        setMessages(
+          data.messages.map(m => ({ ...m, timestamp: new Date(m.timestamp) })),
+        );
+        setUsers(data.users.map(u => ({ ...u, joinedAt: new Date(u.joinedAt) })));
+      },
 
-    const onDisconnect = () => {
-      console.log('WebSocket disconnected');
-      setIsConnected(false);
-      hasJoinedRef.current = false;
-    };
+      onMessageNew(message) {
+        setMessages(prev => [
+          ...prev,
+          { ...message, timestamp: new Date(message.timestamp) },
+        ]);
+      },
 
-    const onRoomHistory = (data: { room: string; messages: Message[]; users: ChatUser[] }) => {
-      setMessages(data.messages.map(m => ({
-      ...m,
-      timestamp: new Date(m.timestamp),
-    })));
-    setUsers(data.users.map(u => ({ ...u, joinedAt: new Date(u.joinedAt) })));
-  };
+      onRoomUsers(updatedUsers) {
+        setUsers(updatedUsers.map(u => ({ ...u, joinedAt: new Date(u.joinedAt) })));
+      },
 
-  const onMessageNew = (message: Message) => {
-      setMessages(prev => [
-        ...prev,
-        { ...message, timestamp: new Date(message.timestamp) }
-      ]);
-  };
+      onError(data) {
+        console.error('WebSocket error:', data.message);
+        setError(data.message);
+      },
+    });
 
-  const onRoomUsers = (updatedUsers: ChatUser[]) => {
-    setUsers(updatedUsers.map(u => ({ ...u, joinedAt: new Date(u.joinedAt) })));
-  };
-
-  const onError = (data: { message: string }) => {
-      console.error('WebSocket error:', data.message);
-      setError(data.message);
-    };
-
-    socket.on('connect', onConnect);
-    socket.on('disconnect', onDisconnect);
-    socket.on('room:history', onRoomHistory);
-    socket.on('message:new', onMessageNew);
-    socket.on('room:users', onRoomUsers);
-    socket.on('error', onError);
-
-    return () => {
-      socket.off('connect', onConnect);
-      socket.off('disconnect', onDisconnect);
-      socket.off('room:history', onRoomHistory);
-      socket.off('message:new', onMessageNew);
-      socket.off('room:users', onRoomUsers);
-      socket.off('error', onError);
-    };
+    // socketService.subscribe() returns a symmetric unsubscribe function —
+    // calling it here prevents listener accumulation across StrictMode double-mounts
+    return unsubscribe;
   }, []);
 
-  // Separate effect: join room when user becomes available after socket is already connected
-  // This handles the case where user submits name AFTER initial connection
+  // --------------------------------------------------------------------------
+  // DEFERRED JOIN EFFECT
+  // --------------------------------------------------------------------------
+
+  // Handles the case where the user submits their name *after* the socket has
+  // already connected — the connect handler above only fires on (re)connection,
+  // so this effect catches the user→non-null transition mid-session
   useEffect(() => {
-    const socket = socketRef.current;
-    if (socket && isConnected && user && !hasJoinedRef.current) {
-      socket.emit('user:join', user);
+    if (isConnected && user && !hasJoinedRef.current) {
+      socketService.join(user);
       hasJoinedRef.current = true;
     }
   }, [user, isConnected]);
 
-  const sendMessage = useCallback((text: string) => {
-    if (socketRef.current && isConnected && text.trim()) {
-      socketRef.current.emit('message:send', { text: text.trim() });
-    } else if (!isConnected) {
-    }
-  }, [isConnected]);
+  // --------------------------------------------------------------------------
+  // ACTIONS
+  // --------------------------------------------------------------------------
 
-  // Allow callers to dismiss socket errors — needed when retrying with a different name after server rejection
+  const sendMessage = useCallback(
+    (text: string) => {
+      if (isConnected && text.trim()) {
+        socketService.sendMessage(text.trim());
+      }
+      // Silently drop if disconnected — App.tsx disables the send button
+      // while offline, so this branch is a safety net, not a primary path
+    },
+    [isConnected],
+  );
+
+  // Allow callers to dismiss socket errors — needed when retrying with a
+  // different name after the server rejects a join
   const clearError = useCallback(() => setError(null), []);
+
+  // --------------------------------------------------------------------------
+  // RETURN
+  // --------------------------------------------------------------------------
 
   return {
     isConnected,
