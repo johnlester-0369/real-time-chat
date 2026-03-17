@@ -13,7 +13,7 @@ interface Message {
 interface Room {
   name: string;
   messages: Message[];
-  users: Map<string, { id: string; name: string; color: string }>;
+  users: Map<string, { id: string; name: string; color: string; joinedAt: Date }>;
 }
 
 // Full Message type avoids the Omit<> + UUID spread pattern at injection time
@@ -44,6 +44,13 @@ const generalRoom: Room = {
   users: new Map(),
 };
 
+// Grace period prevents "left/joined" spam when browser refresh causes rapid disconnect-reconnect
+const RECONNECT_GRACE_MS = 5_000;
+const pendingDisconnects = new Map<string, {
+  timer: ReturnType<typeof setTimeout>;
+  user: { id: string; name: string; color: string; joinedAt: Date };
+}>();
+
 export default function setupSocketServer(httpServer: HttpServer) {
   const io = new SocketServer(httpServer, {
     cors: {
@@ -71,15 +78,26 @@ export default function setupSocketServer(httpServer: HttpServer) {
     });
     socket.on('user:join', (userData: { name: string; color: string }) => {
       // Idempotency check: prevent duplicate join messages if client accidentally re-emits
-      // This stops infinite loops caused by client-side state re-renders
       const existingUser = generalRoom.users.get(socket.id);
       if (existingUser) {
-        // User already joined — just update their info without broadcasting "joined" message
+        // User already joined — preserve original joinedAt timestamp on re-emit
         generalRoom.users.set(socket.id, {
           id: socket.id,
           name: userData.name,
           color: userData.color,
+          joinedAt: existingUser.joinedAt,
         });
+        io.emit('room:users', Array.from(generalRoom.users.values()));
+        return;
+      }
+
+      // Reconnect within grace window — cancel pending leave broadcast and silently restore
+      // Keyed by name because socket.id changes on browser refresh
+      const pending = pendingDisconnects.get(userData.name);
+      if (pending) {
+        clearTimeout(pending.timer);
+        pendingDisconnects.delete(userData.name);
+        generalRoom.users.set(socket.id, { ...pending.user, id: socket.id });
         io.emit('room:users', Array.from(generalRoom.users.values()));
         return;
       }
@@ -88,6 +106,7 @@ export default function setupSocketServer(httpServer: HttpServer) {
         id: socket.id,
         name: userData.name,
         color: userData.color,
+        joinedAt: new Date(),
       });
 
       io.emit('room:users', Array.from(generalRoom.users.values()));
@@ -133,19 +152,23 @@ export default function setupSocketServer(httpServer: HttpServer) {
       const user = generalRoom.users.get(socket.id);
       if (user) {
         generalRoom.users.delete(socket.id);
-
-        io.emit('room:users', Array.from(generalRoom.users.values()));
-
-        const leaveMsg: Message = {
-          id: crypto.randomUUID(),
-          userId: 'system',
-          userName: 'System',
-          userColor: 'neutral',
-          text: `${user.name} left the room`,
-          timestamp: new Date(),
-        };
-        generalRoom.messages.push(leaveMsg);
-        io.emit('message:new', leaveMsg);
+        // Defer leave broadcast — browser refresh reconnects within the grace window,
+        // so we only broadcast "left" if the user doesn't rejoin in time
+        const timer = setTimeout(() => {
+          pendingDisconnects.delete(user.name);
+          io.emit('room:users', Array.from(generalRoom.users.values()));
+          const leaveMsg: Message = {
+            id: crypto.randomUUID(),
+            userId: 'system',
+            userName: 'System',
+            userColor: 'neutral',
+            text: `${user.name} left the room`,
+            timestamp: new Date(),
+          };
+          generalRoom.messages.push(leaveMsg);
+          io.emit('message:new', leaveMsg);
+        }, RECONNECT_GRACE_MS);
+        pendingDisconnects.set(user.name, { timer, user });
       }
       console.log(`User disconnected: ${socket.id}`);
     });
