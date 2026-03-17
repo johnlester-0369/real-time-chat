@@ -105,56 +105,84 @@ export default function setupSocketServer(httpServer: HttpServer) {
   io.on('connection', (socket: Socket) => {
     console.log(`User connected: ${socket.id}`);
 
+    // Send history immediately on connect so the client can show online count and
+    // seed messages before the user has even typed their name
     socket.emit('room:history', {
       room: 'general',
       messages: generalRoom.messages,
-      users: Array.from(generalRoom.users.values()),
+      users: toClientUsers(generalRoom.users),
     });
-    socket.on('user:join', (userData: { name: string; color: string }) => {
-      // Idempotency check: prevent duplicate join messages if client accidentally re-emits
+
+    socket.on('user:join', (userData: { userId: string; name: string; color: string }) => {
+      // Idempotency check: socket already registered (duplicate emit from client side)
       const existingUser = generalRoom.users.get(socket.id);
       if (existingUser) {
-        // User already joined — preserve original joinedAt timestamp on re-emit
+        // Preserve original joinedAt — only update mutable fields on re-emit
         generalRoom.users.set(socket.id, {
-          id: socket.id,
+          ...existingUser,
           name: userData.name,
           color: userData.color,
-          joinedAt: existingUser.joinedAt,
         });
-        io.emit('room:users', Array.from(generalRoom.users.values()));
+        io.emit('room:users', toClientUsers(generalRoom.users));
         return;
       }
 
-      // Reconnect within grace window — cancel pending leave broadcast and silently restore
-      // Keyed by name because socket.id changes on browser refresh
-      const pending = pendingDisconnects.get(userData.name);
+      // Reconnect within grace window — cancel pending leave broadcast and silently restore.
+      // UUID key means browser refresh (new socket.id, same UUID from URL) is correctly
+      // identified as the same user, avoiding a spurious "left / joined" notification pair.
+      const pending = pendingDisconnects.get(userData.userId);
       if (pending) {
         clearTimeout(pending.timer);
-        pendingDisconnects.delete(userData.name);
-        generalRoom.users.set(socket.id, { ...pending.user, id: socket.id });
-        io.emit('room:users', Array.from(generalRoom.users.values()));
+        pendingDisconnects.delete(userData.userId);
+        generalRoom.users.set(socket.id, { ...pending.user, socketId: socket.id });
+        io.emit('room:users', toClientUsers(generalRoom.users));
         return;
       }
 
-      generalRoom.users.set(socket.id, {
-        id: socket.id,
+      // Name uniqueness: a name is "taken" only if a *different* UUID currently holds it.
+      // A known UUID reclaiming its own name (e.g. after grace expiry) is always allowed —
+      // the name was reserved for them in userRegistry.
+      const currentHolder = Array.from(generalRoom.users.values()).find(
+        u => u.name.toLowerCase() === userData.name.toLowerCase()
+      );
+      const nameTaken = currentHolder !== undefined && currentHolder.userId !== userData.userId;
+      if (nameTaken) {
+        socket.emit('error', { message: `"${userData.name}" is already taken. Please choose a different name.` });
+        return;
+      }
+
+      // Preserve original joinedAt for returning users whose grace period expired —
+      // they were seen before so we don't reset their tenure in the room
+      const registered = userRegistry.get(userData.userId);
+      const joinedAt = registered?.joinedAt ?? new Date();
+      const isNewUser = registered === undefined;
+
+      const newUser: UserRecord = {
+        socketId: socket.id,
+        userId: userData.userId,
         name: userData.name,
         color: userData.color,
-        joinedAt: new Date(),
-      });
-
-      io.emit('room:users', Array.from(generalRoom.users.values()));
-
-      const joinMsg: Message = {
-        id: crypto.randomUUID(),
-        userId: 'system',
-        userName: 'System',
-        userColor: 'neutral',
-        text: `${userData.name} joined the room`,
-        timestamp: new Date(),
+        joinedAt,
       };
-      generalRoom.messages.push(joinMsg);
-      io.emit('message:new', joinMsg);
+
+      userRegistry.set(userData.userId, { name: userData.name, color: userData.color, joinedAt });
+      generalRoom.users.set(socket.id, newUser);
+      io.emit('room:users', toClientUsers(generalRoom.users));
+
+      // Only broadcast join message for genuinely new users — returning users after
+      // grace expiry reconnect silently to avoid spamming the room with known names
+      if (isNewUser) {
+        const joinMsg: Message = {
+          id: crypto.randomUUID(),
+          userId: 'system',
+          userName: 'System',
+          userColor: 'neutral',
+          text: `${userData.name} joined the room`,
+          timestamp: new Date(),
+        };
+        generalRoom.messages.push(joinMsg);
+        io.emit('message:new', joinMsg);
+      }
     });
 
     socket.on('message:send', (data: { text: string }) => {
