@@ -60,6 +60,15 @@ export default function App() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    // Reset to 'auto' first so the element can shrink when text is deleted —
+    // scrollHeight only expands when height is already constrained to a fixed value
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [draft])
+
   function handleNameSubmit(name: string) {
     const userId = crypto.randomUUID()
     // Write identity to URL so page refresh restores the session automatically.
@@ -93,10 +102,9 @@ export default function App() {
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSendMessage()
-    }
+    // Enter now inserts a newline — browser default textarea behavior is preserved.
+    // Message dispatch is send-button-only; no keyboard shortcut to avoid accidental sends.
+    void e
   }
 
   return (
@@ -245,7 +253,7 @@ export default function App() {
           ].join(' ')}>
             <textarea
               ref={textareaRef}
-              className="flex-1 bg-transparent resize-none text-body-md text-on-surface placeholder:text-on-surface-variant outline-none min-h-[24px] max-h-32 py-0.5 leading-normal disabled:opacity-50"
+              className="flex-1 bg-transparent resize-none text-body-md text-on-surface placeholder:text-on-surface-variant outline-none min-h-[24px] py-0.5 leading-normal disabled:opacity-50"
               placeholder={isConnected ? "Message #general" : "Reconnecting..."}
               value={draft}
               rows={1}
@@ -266,7 +274,7 @@ export default function App() {
           </div>
 
           <p className="text-label-sm text-on-surface-variant text-center mt-2 select-none">
-            Public room · Enter to send · Shift+Enter for new line
+            Public room · Enter for new line · Send button to send
             {!isConnected && <span className="block text-warning">· Offline — messages will be sent when reconnected</span>}
           </p>
         </div>
