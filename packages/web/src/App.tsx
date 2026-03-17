@@ -122,7 +122,7 @@ export default function App() {
       )}
 
       {/* Header */}
-      <header className="flex items-center justify-between px-4 h-14 shrink-0 bg-surface-container-low border-b border-outline-variant shadow-elevation-1 z-sticky">
+      <header className="flex items-center justify-between px-4 h-14 shrink-0 bg-surface border-b border-outline-variant z-sticky">
         <div className="flex items-center gap-2 min-w-0">
           <Hash className="w-5 h-5 text-on-surface-variant shrink-0" aria-hidden="true" />
           <span className="text-title-md text-on-surface font-medium">general</span>
@@ -190,31 +190,34 @@ export default function App() {
                       <Avatar.Fallback />
                     </Avatar.Root>
                   )}
-                </div>
+              </div>
 
-                <div className={`flex flex-col gap-0.5 max-w-[75%] sm:max-w-sm md:max-w-md ${isMe ? 'items-end' : 'items-start'}`}>
-
-                  {!isGrouped && (
-                    <div className={`flex items-baseline gap-2 px-1 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                      <span className="text-label-md font-medium text-on-surface">
+              <div className={`flex flex-col gap-0.5 max-w-[75%] sm:max-w-sm md:max-w-md ${isMe ? 'items-end' : 'items-start'}`}>
+                {/* min-w-0 prevents flex item from refusing to shrink below intrinsic content size */}
+                {!isGrouped && (
+                  <div className={`flex items-baseline gap-2 px-1 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                    <span className="text-label-md font-medium text-on-surface">
                         {isMe ? userIdentity.name : msg.userName}
                       </span>
                       <span className="text-label-sm text-on-surface-variant">
                         {formatTime(new Date(msg.timestamp))}
                       </span>
-                    </div>
-                  )}
-
-                  <div
-                    className={[
-                      'px-3.5 py-2 text-body-md break-words leading-relaxed',
-                      isMe
-                        ? 'bg-primary text-on-primary rounded-2xl rounded-br-sm'
-                        : 'bg-surface-container-high text-on-surface rounded-2xl rounded-bl-sm',
-                    ].join(' ')}
-                  >
-                    {msg.text}
                   </div>
+                )}
+
+                {/* Responsive text wrapping: break-all for mobile (aggressive, prevents overflow), 
+                    break-words for sm+ (preserves word boundaries when space allows).
+                    whitespace-pre-wrap respects user-entered newlines while still wrapping. */}
+                <div
+                  className={[
+                    'px-3.5 py-2 text-body-md break-all sm:break-words whitespace-pre-wrap leading-relaxed min-w-0',
+                    isMe
+                      ? 'bg-primary text-on-primary rounded-2xl rounded-br-sm'
+                      : 'bg-surface-container-high text-on-surface rounded-2xl rounded-bl-sm',
+                  ].join(' ')}
+                >
+                  {msg.text}
+                </div>
 
                   {isGrouped && (
                     <span className="text-label-sm text-on-surface-variant px-1">
@@ -231,7 +234,7 @@ export default function App() {
       </main>
 
       {/* Input bar */}
-      <footer className="shrink-0 border-t border-outline-variant bg-surface-container-low">
+      <footer className="shrink-0 border-t border-outline-variant bg-surface">
         <div className="max-w-3xl mx-auto px-3 sm:px-6 py-3">
 
           <div className={[
