@@ -68,17 +68,17 @@ let instance: AppSocketServer | null = null;
 export function initSocketServer(httpServer: HttpServer): AppSocketServer {
   if (instance) return instance;
 
+  // Build allowlist once at server startup — env vars don't change during process lifetime
+  const allowedOrigins = parseCorsOrigins();
+
   instance = new SocketServer<ClientToServerEvents, ServerToClientEvents>(httpServer, {
     cors: {
-      // Allow any localhost origin for development flexibility — the Vite dev server
-      // may use port 5173, 5174, etc. depending on which ports are free
+      // Set lookup is O(1) and works for both localhost dev and production URLs injected via CORS_ORIGIN.
+      // null origin (same-origin requests, Postman, curl) is always allowed — only browser cross-origin
+      // requests carry a non-null Origin header that needs validation
       origin: (origin, callback) => {
-        if (!origin) return callback(null, true);
-        if (/^http:\/\/localhost(:\d+)?$/.test(origin)) {
-          callback(null, true);
-        } else {
-          callback(new Error('Not allowed by CORS'));
-        }
+        if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+        callback(new Error(`Origin "${origin}" not allowed by CORS policy`));
       },
       methods: ['GET', 'POST'],
       credentials: true,
