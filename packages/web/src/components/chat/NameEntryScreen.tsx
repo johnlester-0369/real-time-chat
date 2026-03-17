@@ -15,9 +15,20 @@ function validateName(raw: string): string {
 interface NameEntryScreenProps {
   onNameSubmit: (name: string) => void
   isConnected: boolean
+  // Server-side join rejection error (e.g. name already taken) — surfaced via useSocket's error event
+  serverError?: string | null
+  onClearServerError?: () => void
+  // Live count from room:history so the user can see activity before joining
+  onlineCount?: number
 }
 
-export default function NameEntryScreen({ onNameSubmit, isConnected }: NameEntryScreenProps) {
+export default function NameEntryScreen({
+  onNameSubmit,
+  isConnected,
+  serverError,
+  onClearServerError,
+  onlineCount = 0,
+}: NameEntryScreenProps) {
   const [value, setValue] = useState('')
   const [error, setError] = useState('')
   const [touched, setTouched] = useState(false)
@@ -67,6 +78,8 @@ export default function NameEntryScreen({ onNameSubmit, isConnected }: NameEntry
               onChange={e => {
                 setValue(e.target.value)
                 if (touched) setError(validateName(e.target.value))
+                // Clear server-side name-taken error so the user can attempt a different name cleanly
+                onClearServerError?.()
               }}
               onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }}
               onBlur={() => {
@@ -77,27 +90,27 @@ export default function NameEntryScreen({ onNameSubmit, isConnected }: NameEntry
               maxLength={NAME_MAX}
               autoFocus
               autoComplete="off"
-              aria-describedby={error ? 'name-error' : undefined}
-              aria-invalid={error ? true : undefined}
+              aria-describedby={(serverError ?? error) ? 'name-error' : undefined}
+              aria-invalid={(serverError ?? error) ? true : undefined}
               className={[
                 'bg-surface-container rounded-xl px-4 py-3 text-body-md text-on-surface w-full',
                 'placeholder:text-on-surface-variant border transition-all duration-fast',
                 'focus:outline-none focus:ring-1',
-                error
+                (serverError ?? error)
                   ? 'border-error focus:border-error focus:ring-error'
                   : 'border-outline-variant focus:border-primary focus:ring-primary',
               ].join(' ')}
             />
 
             <div className="flex items-start justify-between gap-2 min-h-[1.125rem]">
-              {error
+              {(serverError ?? error)
                 ? (
                     <span
                       id="name-error"
                       role="alert"
                       className="text-label-sm text-error"
                     >
-                      {error}
+                      {serverError ?? error}
                     </span>
                   )
                 : <span aria-hidden="true" />}
@@ -109,11 +122,19 @@ export default function NameEntryScreen({ onNameSubmit, isConnected }: NameEntry
 
           {/* Connection status indicator — decoupled from button so the user can
               still submit their name while offline; useSocket auto-joins on reconnect */}
-          <div className="flex items-center justify-center gap-1.5 text-label-sm">
-            <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-success' : 'bg-warning animate-pulse'}`} />
-            <span className={isConnected ? 'text-success' : 'text-on-surface-variant'}>
-              {isConnected ? 'Server connected' : 'Connecting to server...'}
-            </span>
+          <div className="flex items-center justify-center gap-2 text-label-sm">
+            <div className="flex items-center gap-1.5">
+              <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-success' : 'bg-warning animate-pulse'}`} />
+              <span className={isConnected ? 'text-success' : 'text-on-surface-variant'}>
+                {isConnected ? 'Server connected' : 'Connecting to server...'}
+              </span>
+            </div>
+            {/* Show online presence before joining — room:history delivers current users on connect */}
+            {isConnected && (
+              <span className="text-on-surface-variant">
+                · {onlineCount} online
+              </span>
+            )}
           </div>
 
           <button
