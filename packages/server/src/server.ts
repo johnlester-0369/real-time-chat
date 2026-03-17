@@ -1,7 +1,7 @@
 // .js extension required — nodenext moduleResolution resolves to .ts at compile time
 // but the emitted JS and Node's ESM loader both need the .js reference
 import app from './app.js';
-import setupSocketServer from './socket.js';
+import setupSocketServer from './socket/index.js';
 
 // noUncheckedIndexedAccess means process.env['PORT'] is string | undefined —
 // nullish coalescing before Number() prevents NaN from crashing the listener
