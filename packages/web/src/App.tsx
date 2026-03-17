@@ -8,47 +8,80 @@ import NameEntryScreen from '@/components/chat/NameEntryScreen'
 import { useSocket } from '@/hooks/useSocket'
 import type { Message, UserColor } from '@/types/chat.types'
 
-const CHAT_NAME_KEY = 'chat-display-name'
+// Read identity from URL query params — set by handleNameSubmit on first join.
+// URL params survive page refresh without touching localStorage, and the UUID is
+// visible/shareable in the address bar for debugging reconnect issues.
+function getUrlIdentity(): { userId: string; name: string } | null {
+  const params = new URLSearchParams(window.location.search)
+  const userId = params.get('userId')
+  const name = params.get('name')
+  // Guard against malformed URLs that have keys but empty values
+  if (userId && name?.trim()) return { userId, name: name.trim() }
+  return null
+}
 
 function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
-function isMessageFromMe(message: Message, currentUserName: string): boolean {
-  return message.userId === 'me' || message.userName === currentUserName
+function isMessageFromMe(message: Message, currentUserId: string): boolean {
+  // UUID comparison is authoritative — eliminates the name-matching fallback that
+  // produced false positives when two users shared a display name
+  return message.userId === currentUserId
 }
 
 export default function App() {
   const { theme, setTheme } = useTheme()
   const [draft, setDraft] = useState('')
-  const [userName, setUserName] = useState<string>(
-    () => localStorage.getItem(CHAT_NAME_KEY) ?? ''
+  // Lazy initializer reads URL params synchronously before first render —
+  // mirrors the original localStorage.getItem() pattern with no flash of NameEntryScreen
+  const [userIdentity, setUserIdentity] = useState<{ userId: string; name: string } | null>(
+    getUrlIdentity
   )
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  const userColor = 'info' // Could be derived from name later
+  const userColor: UserColor = 'info' // Could be derived from username hash for visual variety
 
   const { 
     isConnected, 
     messages, 
     users, 
     sendMessage,
+    clearError,
     error 
-  } = useSocket(userName ? { name: userName, color: userColor } : null)
+  } = useSocket(
+    userIdentity
+      ? { userId: userIdentity.userId, name: userIdentity.name, color: userColor }
+      : null
+  )
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
   function handleNameSubmit(name: string) {
-    localStorage.setItem(CHAT_NAME_KEY, name)
-    setUserName(name)
-    // useSocket will auto-join on connect/user change
+    const userId = crypto.randomUUID()
+    // Write identity to URL so page refresh restores the session automatically.
+    // replaceState avoids polluting browser history with every name submission.
+    const params = new URLSearchParams()
+    params.set('userId', userId)
+    params.set('name', name)
+    history.replaceState(null, '', `?${params.toString()}`)
+    setUserIdentity({ userId, name })
+    // useSocket auto-joins when userIdentity transitions from null to a value
   }
 
-  if (!userName) {
-    return <NameEntryScreen onNameSubmit={handleNameSubmit} isConnected={isConnected} />
+  if (!userIdentity) {
+    return (
+      <NameEntryScreen
+        onNameSubmit={handleNameSubmit}
+        isConnected={isConnected}
+        serverError={error}
+        onClearServerError={clearError}
+        onlineCount={users.length}
+      />
+    )
   }
 
   function handleSendMessage() {
@@ -126,7 +159,7 @@ export default function App() {
         <div className="max-w-3xl mx-auto px-3 sm:px-6 py-4 flex flex-col gap-3">
 
           {messages.map((msg, idx) => {
-            const isMe = isMessageFromMe(msg, userName)
+            const isMe = isMessageFromMe(msg, userIdentity.userId)
             const prevUser = idx > 0 ? messages[idx - 1]?.userId : null
             const isGrouped = prevUser === msg.userId
 
@@ -164,7 +197,7 @@ export default function App() {
                   {!isGrouped && (
                     <div className={`flex items-baseline gap-2 px-1 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                       <span className="text-label-md font-medium text-on-surface">
-                        {isMe ? userName : msg.userName}
+                        {isMe ? userIdentity.name : msg.userName}
                       </span>
                       <span className="text-label-sm text-on-surface-variant">
                         {formatTime(new Date(msg.timestamp))}
