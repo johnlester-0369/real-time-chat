@@ -34,6 +34,6 @@ export interface ServerToClientEvents {
 }
 
 export interface ClientToServerEvents {
-  'user:join': (userData: { name: string; color: UserColor }) => void;
+  'user:join': (userData: { userId: string; name: string; color: UserColor }) => void;
   'message:send': (data: { text: string }) => void;
 }
