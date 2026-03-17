@@ -130,6 +130,17 @@ export default function App() {
             const prevUser = idx > 0 ? messages[idx - 1]?.userId : null
             const isGrouped = prevUser === msg.userId
 
+            // System events (join/leave) are infrastructure metadata, not conversation turns —
+            // render as centered muted text matching the Facebook Messenger notification pattern
+            // so they don't visually compete with user messages
+            if (msg.userId === 'system') {
+              return (
+                <div key={msg.id} className="text-center text-label-sm text-on-surface-variant py-1 select-none">
+                  {msg.text}
+                </div>
+              )
+            }
+
             return (
               <div
                 key={msg.id}
