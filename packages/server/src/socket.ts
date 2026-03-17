@@ -10,10 +10,21 @@ interface Message {
   timestamp: Date;
 }
 
+// socketId is the current transport connection — changes on every browser refresh/reconnect.
+// userId is the stable client-generated UUID from URL params — persists across sessions.
+// Separating them lets us correlate a returning client without relying on a mutable name.
+interface UserRecord {
+  socketId: string;
+  userId: string;
+  name: string;
+  color: string;
+  joinedAt: Date;
+}
+
 interface Room {
   name: string;
   messages: Message[];
-  users: Map<string, { id: string; name: string; color: string; joinedAt: Date }>;
+  users: Map<string, UserRecord>; // keyed by socketId for O(1) disconnect lookup
 }
 
 // Full Message type avoids the Omit<> + UUID spread pattern at injection time
