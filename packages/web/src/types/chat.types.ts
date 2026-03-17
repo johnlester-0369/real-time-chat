@@ -13,7 +13,7 @@ export interface Message {
 export type UserColor = 'primary' | 'secondary' | 'tertiary' | 'success' | 'warning' | 'info' | 'neutral';
 
 export interface ChatUser {
-  id: string;
+  id: string; // stable client-generated UUID — persisted in URL params, not socket.id
   name: string;
   color: UserColor;
   joinedAt: Date;
@@ -34,6 +34,6 @@ export interface ServerToClientEvents {
 }
 
 export interface ClientToServerEvents {
-  'user:join': (userData: { name: string; color: UserColor }) => void;
+  'user:join': (userData: { userId: string; name: string; color: UserColor }) => void;
   'message:send': (data: { text: string }) => void;
 }
