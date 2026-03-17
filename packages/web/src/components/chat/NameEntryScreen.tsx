@@ -148,7 +148,7 @@ export default function NameEntryScreen({
         </div>
 
         <p className="text-label-sm text-on-surface-variant text-center mt-4 select-none">
-          Your name is saved locally — no account required
+          Your name is stored in the URL — no account required
         </p>
 
       </div>
