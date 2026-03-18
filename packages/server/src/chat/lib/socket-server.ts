@@ -100,6 +100,13 @@ let instance: AppSocketServer | null = null;
  *      browsers to block the response. The dynamic callback + credentials: true
  *      is the correct pattern: the callback echoes the specific origin back so the
  *      browser sees Access-Control-Allow-Origin: <exact-origin>, not the wildcard.
+ *
+ * MOBILE HEARTBEAT TUNING:
+ *   The default pingTimeout (20 s) is too short for mobile clients. iOS and Android
+ *   both suspend the JS thread when the app is backgrounded, stalling the heartbeat.
+ *   Increasing pingTimeout to 60 s gives the OS enough time to resume the app before
+ *   the server declares the socket dead and triggers a full reconnect cycle.
+ *   Keep pingInterval + pingTimeout < 120 s to avoid React Native warnings.
  */
 export function initSocketServer(httpServer: HttpServer): AppSocketServer {
   if (instance) return instance;
@@ -144,6 +151,17 @@ export function initSocketServer(httpServer: HttpServer): AppSocketServer {
       // (Fetch spec violation); the dynamic callback above ensures we never echo back '*'.
       credentials: true,
     },
+
+    // ── Mobile-friendly heartbeat tuning ───────────────────────────────────
+    // pingInterval: left at the default (25 s) — controls how often the server
+    //   sends a ping to check if the client is still alive.
+    // pingTimeout: increased from the default 20 s to 60 s. Mobile OS schedulers
+    //   can suspend the JS thread for several seconds when the app is backgrounded.
+    //   A 20 s window is too short and causes spurious disconnects on iOS and Android.
+    //   60 s gives the platform enough time to resume the app and respond to the ping.
+    //   Rule: keep pingInterval + pingTimeout below 120 s to avoid React Native warnings.
+    pingInterval: 25000,
+    pingTimeout: 60000,
   });
 
   return instance;
