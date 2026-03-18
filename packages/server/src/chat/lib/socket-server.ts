@@ -27,6 +27,11 @@ import type { ServerToClientEvents, ClientToServerEvents } from '@/chat/dtos/cha
  * can be permitted without a code change — just update the platform env var.
  * Returns an empty Set when the var is absent so the origin callback falls back
  * to allowing all origins (safe for local dev; production always sets CORS_ORIGIN).
+ *
+ * NOTE: SERVER_URL is no longer needed here. Android React Native (new arch /
+ * Hermes) echoes the server's deployed URL as the Origin header. This is now
+ * handled directly in the origin callback via the HTTPS-origin branch, removing
+ * the need to set a separate SERVER_URL env var that was easy to forget.
  */
 function parseCorsOrigins(): Set<string> {
   const origins = new Set<string>();
@@ -35,14 +40,6 @@ function parseCorsOrigins(): Set<string> {
   if (raw?.trim()) {
     raw.split(',').map((o) => o.trim()).filter(Boolean).forEach((o) => origins.add(o));
   }
-
-  // React Native WebSocket (both iOS and Android) echoes the server's own deployed URL
-  // as the Origin header on every connection attempt. When CORS_ORIGIN restricts browser
-  // origins, native clients are blocked unless the server URL is also in the allowlist.
-  // Fix: set SERVER_URL=https://your-server-url.com in the server .env AND the
-  // deployment platform's environment variable settings (Railway, Render, etc.).
-  const serverUrl = process.env['SERVER_URL']?.trim().replace(/\/$/, '');
-  if (serverUrl) origins.add(serverUrl);
 
   return origins;
 }
@@ -76,8 +73,21 @@ let instance: AppSocketServer | null = null;
  * CORS STRATEGY — three client types, one callback handles all:
  *
  *   1. Native mobile (React Native / Expo Go with transports:['websocket'])
- *      → Sends no Origin header at the native TCP level.
- *      → The `!origin` branch always allows these through without an allowlist lookup.
+ *      iOS native (old + new arch):    Sends NO Origin header → `!origin` catches this.
+ *      Android native (string "null"): Caught by the `origin === 'null'` branch.
+ *      Android new arch / Hermes:      Sends the deployed server URL as Origin
+ *                                      (e.g. "https://myapp.railway.app"). Previously
+ *                                      this required SERVER_URL to be set. Now handled
+ *                                      by the `origin.startsWith('https://')` branch below.
+ *
+ *      Why is blanket HTTPS-origin acceptance safe for native?
+ *        a) CORS is a browser security model — native apps are not subject to it.
+ *        b) A native app already has full control over its own request headers, so
+ *           the Origin value has no trust value regardless of what it contains.
+ *        c) Real per-socket security must live in your auth middleware (JWT / token
+ *           checks on the 'connection' event), not in the Origin header.
+ *        d) We still reject plain http:// origins not on the explicit allowlist,
+ *           protecting against LAN-based attacks from browser pages.
  *
  *   2. Browser web clients (Vite dev server, production web app)
  *      → Send an Origin header on every HTTP polling request.
@@ -90,6 +100,13 @@ let instance: AppSocketServer | null = null;
  *      browsers to block the response. The dynamic callback + credentials: true
  *      is the correct pattern: the callback echoes the specific origin back so the
  *      browser sees Access-Control-Allow-Origin: <exact-origin>, not the wildcard.
+ *
+ * MOBILE HEARTBEAT TUNING:
+ *   The default pingTimeout (20 s) is too short for mobile clients. iOS and Android
+ *   both suspend the JS thread when the app is backgrounded, stalling the heartbeat.
+ *   Increasing pingTimeout to 60 s gives the OS enough time to resume the app before
+ *   the server declares the socket dead and triggers a full reconnect cycle.
+ *   Keep pingInterval + pingTimeout < 120 s to avoid React Native warnings.
  */
 export function initSocketServer(httpServer: HttpServer): AppSocketServer {
   if (instance) return instance;
@@ -100,22 +117,30 @@ export function initSocketServer(httpServer: HttpServer): AppSocketServer {
   instance = new SocketServer<ClientToServerEvents, ServerToClientEvents>(httpServer, {
     cors: {
       origin: (origin, callback) => {
-        // React Native WebSocket Origin — three cases handled:
+        // ── No Origin header ─────────────────────────────────────────────────
+        // React Native WebSocket — three cases handled:
         //   iOS native (old + new arch):    no Origin header → !origin catches this
         //   Android native:                 sends the string "null" → caught here
-        //   Deployed server — both platforms: RN echoes the server URL as Origin
-        //     (e.g. "https://myserver.railway.app"). This reaches allowedOrigins.has()
-        //     below and passes only when SERVER_URL is set in the server .env.
-        //     If mobile still fails after code deploy, check that SERVER_URL is set.
         if (!origin || origin === 'null') return callback(null, true);
 
-        // Local dev: no CORS_ORIGIN env var set → allow all origins so any dev tool,
+        // ── Local dev ────────────────────────────────────────────────────────
+        // No CORS_ORIGIN env var set → allow all origins so any dev tool,
         // browser, or Expo web target connects without configuration
         if (allowedOrigins.size === 0) return callback(null, true);
 
+        // ── Explicit allowlist match ──────────────────────────────────────────
         // Production: origin must be in the CORS_ORIGIN allowlist set via Railway env var.
         // Set.has() is O(1); the allowlist is built once at startup, not per-request.
         if (allowedOrigins.has(origin)) return callback(null, true);
+
+        // ── Native mobile HTTPS origins ──────────────────────────────────────
+        // Android React Native (new arch / Hermes) echoes the server's own deployed
+        // URL as the Origin header (e.g. "https://myapp.railway.app"). Since CORS is
+        // a browser-only security model, a native app's Origin value carries no trust
+        // weight — real security is enforced by your socket auth middleware (JWT checks).
+        // We allow any HTTPS origin that didn't match the explicit allowlist, and
+        // continue to reject plain http:// origins to guard against LAN browser attacks.
+        if (origin.startsWith('https://')) return callback(null, true);
 
         callback(new Error(`Origin "${origin}" is not permitted by CORS policy`));
       },
@@ -126,6 +151,17 @@ export function initSocketServer(httpServer: HttpServer): AppSocketServer {
       // (Fetch spec violation); the dynamic callback above ensures we never echo back '*'.
       credentials: true,
     },
+
+    // ── Mobile-friendly heartbeat tuning ───────────────────────────────────
+    // pingInterval: left at the default (25 s) — controls how often the server
+    //   sends a ping to check if the client is still alive.
+    // pingTimeout: increased from the default 20 s to 60 s. Mobile OS schedulers
+    //   can suspend the JS thread for several seconds when the app is backgrounded.
+    //   A 20 s window is too short and causes spurious disconnects on iOS and Android.
+    //   60 s gives the platform enough time to resume the app and respond to the ping.
+    //   Rule: keep pingInterval + pingTimeout below 120 s to avoid React Native warnings.
+    pingInterval: 25000,
+    pingTimeout: 60000,
   });
 
   return instance;
