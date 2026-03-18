@@ -41,3 +41,6 @@ app-example
 # generated native folders
 /ios
 /android
+
+# my own steering folder
+.codebase_history
