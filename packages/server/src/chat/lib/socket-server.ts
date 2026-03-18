@@ -18,6 +18,23 @@ import { Server as SocketServer } from 'socket.io';
 import type { ServerToClientEvents, ClientToServerEvents } from '@/chat/dtos/chat.dto.js';
 
 // ============================================================================
+// CORS HELPERS
+// ============================================================================
+
+/**
+ * Builds the allowed-origin Set from the CORS_ORIGIN env var.
+ * Supports comma-separated values so multiple origins (Railway, Vercel, staging)
+ * can be permitted without a code change — just update the platform env var.
+ * Returns an empty Set when the var is absent so the origin callback falls back
+ * to allowing all origins (safe for local dev; production always sets CORS_ORIGIN).
+ */
+function parseCorsOrigins(): Set<string> {
+  const raw = process.env['CORS_ORIGIN'];
+  if (!raw?.trim()) return new Set();
+  return new Set(raw.split(',').map((o) => o.trim()).filter(Boolean));
+}
+
+// ============================================================================
 // TYPES
 // ============================================================================
 
