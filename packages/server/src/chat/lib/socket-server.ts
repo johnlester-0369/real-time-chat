@@ -43,26 +43,23 @@ let instance: AppSocketServer | null = null;
  * Idempotent — returns the existing instance if already initialised, which guards
  * against double-init in test environments or accidental duplicate calls.
  *
- * CORS is configured here rather than in index.ts because it is infrastructure-level
- * policy, not connection routing logic — separation of concerns.
+ * CORS: This is a public chat server with no auth cookies or session credentials.
+ * origin: '*' is correct here — `credentials: true` must NOT be combined with origin: '*'
+ * (browsers reject that combination per the Fetch spec), so credentials is omitted entirely.
+ * React Native native WebSocket connections bypass browser CORS enforcement regardless;
+ * the wildcard covers Expo Go's web debugger and any future browser-based clients.
+ * If auth is added later, switch to origin: [allowlist] + credentials: true + allowRequest.
  */
 export function initSocketServer(httpServer: HttpServer): AppSocketServer {
   if (instance) return instance;
 
-  // Build allowlist once at server startup — env vars don't change during process lifetime
-  const allowedOrigins = parseCorsOrigins();
-
   instance = new SocketServer<ClientToServerEvents, ServerToClientEvents>(httpServer, {
     cors: {
-      // Set lookup is O(1) and works for both localhost dev and production URLs injected via CORS_ORIGIN.
-      // null origin (same-origin requests, Postman, curl) is always allowed — only browser cross-origin
-      // requests carry a non-null Origin header that needs validation
-      origin: (origin, callback) => {
-        if (!origin || allowedOrigins.has(origin)) return callback(null, true);
-        callback(new Error(`Origin "${origin}" not allowed by CORS policy`));
-      },
+      // Wildcard is safe without credentials: true — no auth cookies flow through this server.
+      // Per the Fetch spec, Access-Control-Allow-Origin: * with credentials mode 'include'
+      // is an error; omitting credentials keeps the wildcard valid for all browser clients.
+      origin: '*',
       methods: ['GET', 'POST'],
-      credentials: true,
     },
   });
 
