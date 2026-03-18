@@ -2,11 +2,25 @@
  * Socket Client — Singleton Factory
  *
  * Owns the single Socket.IO connection instance for the lifetime of the app.
- * Mirrors web's chat/lib/socket-client.ts with two mobile-specific adaptations:
+ * Mirrors web's chat/lib/socket-client.ts with mobile-specific adaptations:
  *   1. process.env.EXPO_PUBLIC_SOCKET_URL instead of import.meta.env.VITE_SOCKET_URL
- *   2. transports: ['websocket'] — React Native's fetch polyfill interferes with
- *      Socket.IO's XHR-based polling transport, causing silent connection failures on
- *      Android; websocket-only mode bypasses this and gives a stable persistent connection
+ *   2. transports: ['websocket'] — WebSocket-only mode bypasses React Native's
+ *      incomplete XHR polyfill and gives a stable persistent connection on both
+ *      iOS and Android.
+ *
+ *      WHY websocket-only works (after the CORS + path fixes):
+ *        a) The root cause of earlier failures was NOT the transport choice — it was
+ *           addTrailingSlash:false stripping /socket.io/ → /socket.io (404), and
+ *           withCredentials:true causing XHR inconsistencies in Expo Go's network stack.
+ *        b) With those fixed, WebSocket-only is the leaner, lower-latency option —
+ *           no HTTP polling round-trip before the upgrade, one persistent TCP connection.
+ *        c) WebSocket connections bypass browser CORS restrictions entirely (per the
+ *           Fetch spec), which simplifies the server-side origin handling for native clients.
+ *
+ *   3. addTrailingSlash must NOT be set to false — Socket.IO's default path is
+ *      /socket.io/ (with trailing slash). Stripping it produces /socket.io (no slash)
+ *      which Express cannot match, returning a 404 that manifests as "xhr poll error"
+ *      or "websocket error". Leave addTrailingSlash at its default (true).
  *
  * @module chat/lib/socket-client
  */
@@ -45,20 +59,21 @@ let instance: AppSocket | null = null;
  * Key React Native / Expo options explained:
  *
  *   transports: ['websocket']
- *     React Native's XHR polyfill is incomplete — HTTP long-polling silently
- *     breaks on Android. WebSocket-only bypasses the polyfill entirely.
+ *     WebSocket-only mode. React Native's XMLHttpRequest polyfill is incomplete —
+ *     HTTP long-polling uses XHR under the hood and can break silently on Android.
+ *     WebSocket-only bypasses the polyfill entirely and gives a stable persistent
+ *     connection on both iOS and Android.
+ *     NOTE: EXPO_PUBLIC_SOCKET_URL must use https:// (not wss://).
+ *     Socket.IO automatically converts https → wss for the WebSocket handshake.
+ *     Using wss:// directly is not supported by the socket.io-client URL parser
+ *     and causes connection failures in Expo Go.
  *
- *   upgrade: false
- *     Tells the engine not to attempt a transport upgrade after connecting.
- *     Without this, even with transports:['websocket'], the engine.io client
- *     emits an upgrade probe that can put the connection into a confused retry
- *     loop on Hermes / new architecture Android builds. Always pair this with
- *     transports:['websocket'] to lock the transport at the engine level.
- *
- *   addTrailingSlash: false
- *     Prevents socket.io-client from appending a trailing slash to the path,
- *     which causes double-slash URLs on some Expo/Metro bundler versions
- *     (e.g. "/socket.io//" instead of "/socket.io/").
+ *   withCredentials: false
+ *     Disables the implicit credentials flag on XHR requests. React Native's XHR
+ *     polyfill behaves inconsistently when withCredentials is true (engine.io-client's
+ *     default), causing request failures unrelated to CORS or auth headers.
+ *     Safe to disable here because auth is handled at the socket middleware level
+ *     (JWT in the handshake auth payload), not via cookies or browser credentials.
  *
  *   reconnectionAttempts: Infinity
  *     Mobile connections drop regularly (tunnels, elevators, background).
@@ -66,14 +81,26 @@ let instance: AppSocket | null = null;
  *     responsible for surfacing the degraded state to the user.
  *
  *   timeout: 20000
- *     Handshake timeout increased from 10 s — mobile networks (especially on
- *     first cold launch or a wake-from-background reconnect) can be significantly
- *     slower than desktop. 10 s was too aggressive and caused spurious timeouts
- *     on legitimate connections.
+ *     Handshake timeout increased from the original 10 s — mobile cold-start
+ *     latency and wake-from-background reconnects on slower networks need the
+ *     extra headroom to avoid spurious timeout failures.
+ *
+ * Options intentionally omitted / left at defaults:
+ *
+ *   addTrailingSlash  — left at default (true). Setting it to false strips the
+ *     trailing slash from /socket.io/ → /socket.io, which Express cannot match
+ *     and returns a 404. Root cause of the "xhr poll error / Cannot GET /socket.io"
+ *     failure seen during debugging. Do not set this option.
+ *
+ *   upgrade  — left at default (true). No-op when transports is locked to
+ *     ['websocket'] since there is no lower transport to upgrade from.
  */
 export function getSocketClient(): AppSocket {
   if (!instance) {
     // Resolved at build time by Expo from .env.development / .env.production.
+    // Must be https:// — NOT wss://. Socket.IO converts https → wss internally
+    // during the WebSocket handshake. Using wss:// directly is not supported by
+    // the socket.io-client URL parser and causes connection failures in Expo Go.
     // Throws at startup rather than silently connecting to undefined — fast-fail
     // surfaces misconfigured deployments immediately.
     const socketUrl = process.env.EXPO_PUBLIC_SOCKET_URL;
