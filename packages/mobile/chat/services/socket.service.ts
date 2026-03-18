@@ -113,6 +113,13 @@ class SocketService {
     if (handlers.onRoomUsers) socket.on('room:users', handlers.onRoomUsers);
     if (handlers.onError) socket.on('error', handlers.onError);
 
+    // StrictMode double-mount safety: if the socket already connected before this
+    // listener was registered (e.g. during the first mount's effect that was then
+    // cleaned up), manually invoke onConnect so state reflects reality
+    if (socket.connected && handlers.onConnect) {
+      handlers.onConnect();
+    }
+
     // Return teardown so callers don't need to hold handler references for cleanup
     return () => this.unsubscribe(handlers);
   }
