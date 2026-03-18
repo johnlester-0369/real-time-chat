@@ -153,9 +153,14 @@ export function getSocketClient(): AppSocket {
     // Surface connection errors to the console so developers can see WHY the
     // connection is failing (DNS, TLS, CORS, server crash, wrong URL, etc.)
     // These are engine.io-level errors that fire before the socket-level error event.
+    //
+    // Useful fields on the error object:
+    //   err.message     — human-readable summary (e.g. "websocket error")
+    //   err.description — underlying HTTP status code (e.g. 404) or network error
+    //   err.context     — raw XHR object; inspect ._response and ._url for detail
     instance.on('connect_error', (err) => {
       console.error('[socket-client] connect_error:', err.message);
-      console.error('[socket-client] error detail:', err);
+      console.error('[socket-client] description:', (err as any).description);
     });
 
     // Log disconnections with the reason so you can distinguish between:
