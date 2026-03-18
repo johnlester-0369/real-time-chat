@@ -55,13 +55,28 @@ export function getSocketClient(): AppSocket {
     }
     
     instance = io(socketUrl, {
-      withCredentials: true,
       autoConnect: true,
-      // React Native's XMLHttpRequest polyfill is incomplete — polling transport uses
-      // XHR and breaks silently on Android; websocket-only ensures a stable persistent
-      // connection across both iOS and Android
+      // websocket-only: React Native's XMLHttpRequest polyfill is incomplete — polling
+      // transport uses XHR and breaks silently on Android. WebSocket-only ensures a stable
+      // persistent connection across both iOS and Android. WebSocket connections are also
+      // not subject to CORS restrictions (per the Fetch spec), bypassing the browser
+      // same-origin policy entirely for native clients.
       transports: ['websocket'],
+      // Reconnection config: exponential backoff capped at 5s so the UI shows
+      // the error state quickly rather than hiding behind infinite silent retries
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      // Explicit handshake timeout — default is 20s which is too long to surface errors
+      timeout: 10000,
     });
+
+    // Surface connection errors to the console so developers can see WHY the
+    // connection is failing (DNS, TLS, CORS, server crash, wrong URL, etc.)
+    // These are engine.io-level errors that fire before the socket-level error event
+    instance.on('connect_error', (err) => {
+      console.error('[socket-client] Connection error:', err.message, err);
+    });
+
   }
   return instance;
 }

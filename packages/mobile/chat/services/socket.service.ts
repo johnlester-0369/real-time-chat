@@ -94,6 +94,14 @@ class SocketService {
    * Using an explicit handlers object (vs individual on/off calls at the hook
    * level) ensures subscribe and unsubscribe are always symmetric — no risk of
    * forgetting to remove a listener that was added.
+   *
+   * STRICTMODE NOTE: React 18 StrictMode (active in Expo development) double-invokes
+   * effects: mount → cleanup → mount again. The socket singleton connects during
+   * the first effect, fires `connect`, then cleanup removes the listener before
+   * the second mount re-registers it. The `connect` event will NOT fire again for
+   * an already-connected socket, so `isConnected` would stay false forever.
+   * Fix: after attaching listeners, check socket.connected and immediately invoke
+   * onConnect so the second-mount effect correctly reflects the existing connection.
    */
   subscribe(handlers: SocketEventHandlers): () => void {
     const { socket } = this;
@@ -104,6 +112,13 @@ class SocketService {
     if (handlers.onMessageNew) socket.on('message:new', handlers.onMessageNew);
     if (handlers.onRoomUsers) socket.on('room:users', handlers.onRoomUsers);
     if (handlers.onError) socket.on('error', handlers.onError);
+
+    // StrictMode double-mount safety: if the socket already connected before this
+    // listener was registered (e.g. during the first mount's effect that was then
+    // cleaned up), manually invoke onConnect so state reflects reality
+    if (socket.connected && handlers.onConnect) {
+      handlers.onConnect();
+    }
 
     // Return teardown so callers don't need to hold handler references for cleanup
     return () => this.unsubscribe(handlers);
