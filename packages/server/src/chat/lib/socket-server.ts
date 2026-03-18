@@ -100,12 +100,13 @@ export function initSocketServer(httpServer: HttpServer): AppSocketServer {
   instance = new SocketServer<ClientToServerEvents, ServerToClientEvents>(httpServer, {
     cors: {
       origin: (origin, callback) => {
-        // React Native WebSocket Origin handling — two distinct cases by platform:
-        //   iOS native WebSocket: sends no Origin header at all → !origin catches this
-        //   Android native WebSocket: sends the string literal "null" as Origin (not JS null,
-        //   not absent — the actual four-character string). Both cases bypass browser CORS
-        //   enforcement entirely, so both should be allowed unconditionally regardless of
-        //   the CORS_ORIGIN allowlist.
+        // React Native WebSocket Origin — three cases handled:
+        //   iOS native (old + new arch):    no Origin header → !origin catches this
+        //   Android native:                 sends the string "null" → caught here
+        //   Deployed server — both platforms: RN echoes the server URL as Origin
+        //     (e.g. "https://myserver.railway.app"). This reaches allowedOrigins.has()
+        //     below and passes only when SERVER_URL is set in the server .env.
+        //     If mobile still fails after code deploy, check that SERVER_URL is set.
         if (!origin || origin === 'null') return callback(null, true);
 
         // Local dev: no CORS_ORIGIN env var set → allow all origins so any dev tool,
