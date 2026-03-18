@@ -29,9 +29,22 @@ import type { ServerToClientEvents, ClientToServerEvents } from '@/chat/dtos/cha
  * to allowing all origins (safe for local dev; production always sets CORS_ORIGIN).
  */
 function parseCorsOrigins(): Set<string> {
+  const origins = new Set<string>();
+
   const raw = process.env['CORS_ORIGIN'];
-  if (!raw?.trim()) return new Set();
-  return new Set(raw.split(',').map((o) => o.trim()).filter(Boolean));
+  if (raw?.trim()) {
+    raw.split(',').map((o) => o.trim()).filter(Boolean).forEach((o) => origins.add(o));
+  }
+
+  // React Native WebSocket (both iOS and Android) echoes the server's own deployed URL
+  // as the Origin header on every connection attempt. When CORS_ORIGIN restricts browser
+  // origins, native clients are blocked unless the server URL is also in the allowlist.
+  // Fix: set SERVER_URL=https://your-server-url.com in the server .env AND the
+  // deployment platform's environment variable settings (Railway, Render, etc.).
+  const serverUrl = process.env['SERVER_URL']?.trim().replace(/\/$/, '');
+  if (serverUrl) origins.add(serverUrl);
+
+  return origins;
 }
 
 // ============================================================================
