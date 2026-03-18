@@ -110,28 +110,31 @@ export function getSocketClient(): AppSocket {
       );
     }
 
+    if (!socketUrl.startsWith('https://') && !socketUrl.startsWith('http://')) {
+      // Catch the common mistake of setting wss:// or ws:// directly.
+      // Socket.IO needs the HTTP(S) URL — it derives the WebSocket URL internally.
+      // Using wss:// directly causes connection failures in Expo Go on Android.
+      console.warn(
+        '[socket-client] WARNING: EXPO_PUBLIC_SOCKET_URL should start with https:// or http://, ' +
+          `not "${socketUrl.split('://')[0]}://". Raw WebSocket URLs cause connection failures in Expo Go.`,
+      );
+    }
+
     instance = io(socketUrl, {
       autoConnect: true,
 
-      // ── Transport: WebSocket only ────────────────────────────────────────
-      // React Native's XMLHttpRequest polyfill is incomplete — polling transport
-      // uses XHR and breaks silently on Android. WebSocket-only ensures a stable
-      // persistent connection across both iOS and Android. WebSocket connections
-      // are also not subject to CORS restrictions (per the Fetch spec), bypassing
-      // the browser same-origin policy entirely for native clients.
+      // ── Transport ────────────────────────────────────────────────────────
+      // WebSocket-only: bypasses React Native's incomplete XHR polyfill and
+      // gives a stable persistent connection on both iOS and Android.
+      // WebSocket connections are also not subject to CORS restrictions (per the
+      // Fetch spec), bypassing the browser same-origin policy for native clients.
       transports: ['websocket'],
 
-      // Prevent the engine.io upgrade probe even when transports is locked to
-      // ['websocket']. Without this, Hermes / Android new arch builds can enter
-      // a silent retry loop as the client repeatedly attempts and fails the
-      // upgrade handshake. Setting upgrade:false eliminates the probe entirely.
-      upgrade: false,
-
-      // ── Path ────────────────────────────────────────────────────────────
-      // Newer versions of socket.io-client append a trailing slash by default,
-      // which produces malformed paths like "/socket.io//" on some Expo/Metro
-      // bundler versions. Explicitly disabling it keeps the path clean.
-      addTrailingSlash: false,
+      // ── Credentials ─────────────────────────────────────────────────────
+      // Disable implicit XHR credentials. React Native's XHR polyfill is not
+      // spec-compliant when withCredentials is true, causing request failures
+      // unrelated to auth. Auth tokens are passed via the handshake auth payload.
+      withCredentials: false,
 
       // ── Reconnection config ──────────────────────────────────────────────
       // Exponential backoff capped at 5 s so the UI shows the error state
