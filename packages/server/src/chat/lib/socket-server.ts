@@ -18,6 +18,23 @@ import { Server as SocketServer } from 'socket.io';
 import type { ServerToClientEvents, ClientToServerEvents } from '@/chat/dtos/chat.dto.js';
 
 // ============================================================================
+// CORS HELPERS
+// ============================================================================
+
+/**
+ * Builds the allowed-origin Set from the CORS_ORIGIN env var.
+ * Supports comma-separated values so multiple origins (Railway, Vercel, staging)
+ * can be permitted without a code change — just update the platform env var.
+ * Returns an empty Set when the var is absent so the origin callback falls back
+ * to allowing all origins (safe for local dev; production always sets CORS_ORIGIN).
+ */
+function parseCorsOrigins(): Set<string> {
+  const raw = process.env['CORS_ORIGIN'];
+  if (!raw?.trim()) return new Set();
+  return new Set(raw.split(',').map((o) => o.trim()).filter(Boolean));
+}
+
+// ============================================================================
 // TYPES
 // ============================================================================
 
@@ -43,23 +60,53 @@ let instance: AppSocketServer | null = null;
  * Idempotent — returns the existing instance if already initialised, which guards
  * against double-init in test environments or accidental duplicate calls.
  *
- * CORS: This is a public chat server with no auth cookies or session credentials.
- * origin: '*' is correct here — `credentials: true` must NOT be combined with origin: '*'
- * (browsers reject that combination per the Fetch spec), so credentials is omitted entirely.
- * React Native native WebSocket connections bypass browser CORS enforcement regardless;
- * the wildcard covers Expo Go's web debugger and any future browser-based clients.
- * If auth is added later, switch to origin: [allowlist] + credentials: true + allowRequest.
+ * CORS STRATEGY — three client types, one callback handles all:
+ *
+ *   1. Native mobile (React Native / Expo Go with transports:['websocket'])
+ *      → Sends no Origin header at the native TCP level.
+ *      → The `!origin` branch always allows these through without an allowlist lookup.
+ *
+ *   2. Browser web clients (Vite dev server, production web app)
+ *      → Send an Origin header on every HTTP polling request.
+ *      → Checked against the CORS_ORIGIN allowlist in production.
+ *      → In local dev (no CORS_ORIGIN env var) all origins are allowed.
+ *
+ *   3. credentials: true is required for browser compatibility even without cookies —
+ *      some browser environments send credentials mode 'include' implicitly. Using
+ *      origin: '*' with credentials: true is forbidden by the Fetch spec and causes
+ *      browsers to block the response. The dynamic callback + credentials: true
+ *      is the correct pattern: the callback echoes the specific origin back so the
+ *      browser sees Access-Control-Allow-Origin: <exact-origin>, not the wildcard.
  */
 export function initSocketServer(httpServer: HttpServer): AppSocketServer {
   if (instance) return instance;
 
+  // Build allowlist once at server startup — env vars don't change during process lifetime
+  const allowedOrigins = parseCorsOrigins();
+
   instance = new SocketServer<ClientToServerEvents, ServerToClientEvents>(httpServer, {
     cors: {
-      // Wildcard is safe without credentials: true — no auth cookies flow through this server.
-      // Per the Fetch spec, Access-Control-Allow-Origin: * with credentials mode 'include'
-      // is an error; omitting credentials keeps the wildcard valid for all browser clients.
-      origin: '*',
+      origin: (origin, callback) => {
+        // Native mobile clients (React Native WebSocket) send no Origin header —
+        // they bypass browser CORS enforcement entirely, so no allowlist entry is needed
+        if (!origin) return callback(null, true);
+
+        // Local dev: no CORS_ORIGIN env var set → allow all origins so any dev tool,
+        // browser, or Expo web target connects without configuration
+        if (allowedOrigins.size === 0) return callback(null, true);
+
+        // Production: origin must be in the CORS_ORIGIN allowlist set via Railway env var.
+        // Set.has() is O(1); the allowlist is built once at startup, not per-request.
+        if (allowedOrigins.has(origin)) return callback(null, true);
+
+        callback(new Error(`Origin "${origin}" is not permitted by CORS policy`));
+      },
       methods: ['GET', 'POST'],
+      // credentials: true is required for browser clients — without it, browsers that
+      // send credentials mode 'include' (implicit in some environments) will reject the
+      // response even when the origin matches. Must NOT be combined with origin: '*'
+      // (Fetch spec violation); the dynamic callback above ensures we never echo back '*'.
+      credentials: true,
     },
   });
 
