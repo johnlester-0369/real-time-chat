@@ -29,9 +29,22 @@ import type { ServerToClientEvents, ClientToServerEvents } from '@/chat/dtos/cha
  * to allowing all origins (safe for local dev; production always sets CORS_ORIGIN).
  */
 function parseCorsOrigins(): Set<string> {
+  const origins = new Set<string>();
+
   const raw = process.env['CORS_ORIGIN'];
-  if (!raw?.trim()) return new Set();
-  return new Set(raw.split(',').map((o) => o.trim()).filter(Boolean));
+  if (raw?.trim()) {
+    raw.split(',').map((o) => o.trim()).filter(Boolean).forEach((o) => origins.add(o));
+  }
+
+  // React Native WebSocket (both iOS and Android) echoes the server's own deployed URL
+  // as the Origin header on every connection attempt. When CORS_ORIGIN restricts browser
+  // origins, native clients are blocked unless the server URL is also in the allowlist.
+  // Fix: set SERVER_URL=https://your-server-url.com in the server .env AND the
+  // deployment platform's environment variable settings (Railway, Render, etc.).
+  const serverUrl = process.env['SERVER_URL']?.trim().replace(/\/$/, '');
+  if (serverUrl) origins.add(serverUrl);
+
+  return origins;
 }
 
 // ============================================================================
@@ -87,12 +100,13 @@ export function initSocketServer(httpServer: HttpServer): AppSocketServer {
   instance = new SocketServer<ClientToServerEvents, ServerToClientEvents>(httpServer, {
     cors: {
       origin: (origin, callback) => {
-        // React Native WebSocket Origin handling — two distinct cases by platform:
-        //   iOS native WebSocket: sends no Origin header at all → !origin catches this
-        //   Android native WebSocket: sends the string literal "null" as Origin (not JS null,
-        //   not absent — the actual four-character string). Both cases bypass browser CORS
-        //   enforcement entirely, so both should be allowed unconditionally regardless of
-        //   the CORS_ORIGIN allowlist.
+        // React Native WebSocket Origin — three cases handled:
+        //   iOS native (old + new arch):    no Origin header → !origin catches this
+        //   Android native:                 sends the string "null" → caught here
+        //   Deployed server — both platforms: RN echoes the server URL as Origin
+        //     (e.g. "https://myserver.railway.app"). This reaches allowedOrigins.has()
+        //     below and passes only when SERVER_URL is set in the server .env.
+        //     If mobile still fails after code deploy, check that SERVER_URL is set.
         if (!origin || origin === 'null') return callback(null, true);
 
         // Local dev: no CORS_ORIGIN env var set → allow all origins so any dev tool,
