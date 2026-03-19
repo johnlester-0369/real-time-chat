@@ -267,15 +267,11 @@ export default function Index() {
     setDraft('');
   }
 
-  // Render nothing until AsyncStorage read resolves to prevent NameEntryScreen flash
   if (!identityLoaded) return null;
 
   if (!identity) {
     return (
       <>
-        {/* Suppress the expo-router "index" header — NameEntryScreen is a full-screen
-            entry gate with no navigation chrome; without this, the route filename
-            "index" appears as the Stack title before identity is established */}
         <Stack.Screen options={{ headerShown: false }} />
         <NameEntryScreen
           onNameSubmit={handleNameSubmit}
@@ -290,11 +286,8 @@ export default function Index() {
 
   return (
     <View style={[styles.root, { backgroundColor: rgba(colors.surface) }]}>
-      {/* Suppress expo-router's default header — chat renders its own */}
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* 'bottom' edge handles nav-bar clearance at the container level so nothing
-          inside KAV needs inset math — prevents inset/KAV resize-pass conflicts */}
       <SafeAreaView style={styles.flex} edges={['top', 'left', 'right', 'bottom']}>
 
         {/* ── Connection Status Banners ── */}
@@ -356,8 +349,6 @@ export default function Index() {
         {/* ── Messages + Input ── */}
         <KeyboardAvoidingView
           style={styles.flex}
-          // iOS: 'padding' as before. Android: dynamic — 'height' while IME open, undefined after
-          // dismiss so KAV's reset doesn't race the system softwareKeyboardLayoutMode resize pass
           behavior={Platform.OS === 'ios' ? 'padding' : kavBehavior}
           keyboardVerticalOffset={0}
         >
@@ -411,7 +402,6 @@ export default function Index() {
                   key={msg.id}
                   style={[styles.messageRow, isMe ? styles.messageRowMe : styles.messageRowOther]}
                 >
-                  {/* Avatar slot — 32px wide to match web's `w-8` */}
                   <View style={[styles.avatarSlot, isMe ? styles.avatarSlotMe : styles.avatarSlotOther]}>
                     {!isGrouped && (
                       <Avatar.Root
@@ -425,7 +415,6 @@ export default function Index() {
                     )}
                   </View>
 
-                  {/* Bubble column */}
                   <View style={[styles.bubbleCol, isMe ? styles.bubbleColMe : styles.bubbleColOther]}>
                     {!isGrouped && (
                       <View style={[styles.senderRow, isMe ? styles.senderRowMe : styles.senderRowOther]}>
@@ -466,8 +455,6 @@ export default function Index() {
           </ScrollView>
 
           {/* ── Input bar ── */}
-          {/* Bottom inset is handled by SafeAreaView 'bottom' edge above — no paddingBottom
-              here to avoid conflicting with KAV's resize-pass height calculations */}
           <View style={{ backgroundColor: rgba(colors.surface) }}>
             <View style={[styles.inputBar, { borderTopColor: rgba(colors.outlineVariant) }]}>
               <View style={[
