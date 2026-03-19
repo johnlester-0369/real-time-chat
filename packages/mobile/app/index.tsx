@@ -93,21 +93,58 @@ export default function Index() {
   const { colors, tokens, rgba, colorScheme, toggleColorScheme } = useTheme();
   const [draft, setDraft] = useState('');
   const [identity, setIdentity] = useState<{ userId: string; name: string } | null>(null);
-  // Prevent flash of NameEntryScreen before AsyncStorage read completes
   const [identityLoaded, setIdentityLoaded] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
-  // Tracks the current scroll offset so keyboard open/close can compensate
-  // with the exact keyboard height delta — preserves reading position
+
+  // ── Scroll measurement refs ──────────────────────────────────────────────
+  //
+  // Three refs give us a complete, always-fresh picture of the ScrollView state:
+  //
+  //   scrollOffset  — updated by onScroll (user drags) AND manually after every
+  //                   programmatic scrollTo. scrollTo(animated:false) does NOT
+  //                   fire onScroll in RN, so we write to this ref ourselves
+  //                   after every programmatic scroll to keep it honest.
+  //
+  //   contentHeight — updated by onContentSizeChange. Never goes stale because
+  //                   RN fires this whenever content height changes.
+  //
+  //   layoutHeight  — updated by onLayout. Reflects the current visible viewport
+  //                   height of the ScrollView, which changes whenever KAV
+  //                   resizes it (keyboard open/close).
+  //
+  // computeIsAtBottom() derives the answer fresh from all three at call time —
+  // no cached boolean ref that can go stale between events.
+  //
+  // WHY NOT JUST USE A BOOLEAN REF:
+  //   The previous approach stored isAtBottom as a ref and read it in keyboard
+  //   listeners. It went wrong because:
+  //   1. Keyboard open  → scrollToEnd fires → onScroll overwrites scrollOffset
+  //   2. Keyboard close → scrollTo(animated:false) restores position visually
+  //                       BUT onScroll does NOT fire → scrollOffset stays at
+  //                       the post-scrollToEnd value
+  //   3. isAtBottom ref also stays wrong (true) because onScroll never corrected it
+  //   4. Keyboard opens again → snapshots the wrong scrollOffset → wrong branch
+  //
+  // With three measured refs + a fresh compute function, none of that is possible.
+
   const scrollOffset = useRef(0);
-  // Stores the last known keyboard height so dismiss can subtract the same
-  // value that was added on open — avoids drift from slightly different heights
-  const lastKeyboardHeight = useRef(0);
-  // 'height' while IME is open so KAV cooperates with Android's resize pass;
-  // undefined after dismiss so KAV's reset doesn't race the system layout restore
+  const contentHeight = useRef(0);
+  const layoutHeight = useRef(0);
+
+  // Snapshot taken at keyboard-open time, used to restore on dismiss.
+  const preKeyboardOffset = useRef(0);
+  // Whether the user was at the bottom when the keyboard opened.
+  // Determines dismiss strategy: scrollToEnd vs restore-offset.
+  const preKeyboardWasAtBottom = useRef(true);
+
+  // 'height' while IME is open so KAV cooperates with Android's resize pass
   const [kavBehavior, setKavBehavior] = useState<'height' | undefined>(undefined);
 
-  // Load persisted identity once on mount — AsyncStorage is async so we render
-  // nothing until it resolves, matching web's synchronous URL param read pattern
+  // Fresh bottom check — computed from live measurements, never stale
+  function computeIsAtBottom(): boolean {
+    return contentHeight.current - layoutHeight.current - scrollOffset.current < BOTTOM_THRESHOLD;
+  }
+
   useEffect(() => {
     getStoredIdentity()
       .then(stored => setIdentity(stored))
