@@ -376,18 +376,30 @@ export default function Index() {
             contentContainerStyle={styles.messageList}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
-            // Track scroll position so keyboard open/close can compensate with the
-            // exact offset delta — preserves reading position in both directions
-            onScroll={(e) => { scrollOffset.current = e.nativeEvent.contentOffset.y; }}
+            // onScroll — fires for user drags and animated programmatic scrolls.
+            // Does NOT fire for scrollTo(animated:false), which is why we manually
+            // write scrollOffset.current after every programmatic scroll below.
+            onScroll={(e) => {
+              scrollOffset.current = e.nativeEvent.contentOffset.y;
+            }}
             scrollEventThrottle={16}
+            // onContentSizeChange — always fires when content height changes.
+            // Gives us fresh contentHeight without needing an onScroll event.
+            onContentSizeChange={(_w, h) => {
+              contentHeight.current = h;
+            }}
+            // onLayout — fires whenever the ScrollView's viewport dimensions change,
+            // including when KAV resizes it on keyboard open/close.
+            // Gives us fresh layoutHeight to compute isAtBottom accurately.
+            onLayout={(e) => {
+              layoutHeight.current = e.nativeEvent.layout.height;
+            }}
           >
             {messages.map((msg, idx) => {
               const isMe = isMessageFromMe(msg, identity.userId);
               const prevUserId = idx > 0 ? messages[idx - 1]?.userId : null;
               const isGrouped = prevUserId === msg.userId;
 
-              // System events (join/leave) render as centered muted text —
-              // same treatment as web to avoid visually competing with user messages
               if (msg.userId === 'system') {
                 return (
                   <Text
