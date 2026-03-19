@@ -81,7 +81,7 @@ export default function NameEntryScreen({
   return (
     <KeyboardAvoidingView
       style={[styles.flex, { backgroundColor: rgba(colors.surface) }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior="padding"
     >
       <ScrollView
         contentContainerStyle={styles.scroll}
