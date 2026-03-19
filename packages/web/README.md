@@ -449,7 +449,7 @@ All body and label sizes meet WCAG 2.1/2.2 minimum line-height requirements (1.5
 --easing-emphasized:          cubic-bezier(0.2, 0, 0, 1)
 --easing-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1)
 --easing-emphasized-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15)
-```
+````
 
 Tailwind classes: `duration-fast`, `duration-normal`, `duration-slow`, `ease-standard`, `ease-emphasized`.
 
