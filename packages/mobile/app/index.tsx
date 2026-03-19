@@ -437,7 +437,7 @@ export default function Index() {
                         styles.bubbleText,
                         isMe
                           ? { color: rgba(colors.onPrimary), ...tokens.typography.bodyMedium }
-                          : { color: rgba(colors.onSurface),  ...tokens.typography.bodyMedium },
+                          : { color: rgba(colors.onSurface), ...tokens.typography.bodyMedium },
                       ]}>
                         {msg.text}
                       </Text>
