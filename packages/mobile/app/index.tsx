@@ -57,12 +57,6 @@ function uuidv4(): string {
 // HELPERS
 // ============================================================================
 
-/**
- * Reads persisted identity from AsyncStorage.
- * Mobile equivalent of web's getUrlIdentity() — AsyncStorage replaces URL params
- * because deep-link URL params in Expo require expo-linking setup and don't
- * survive all navigation patterns the way a persistent key-value store does.
- */
 async function getStoredIdentity(): Promise<{ userId: string; name: string } | null> {
   try {
     const raw = await AsyncStorage.getItem(IDENTITY_KEY);
@@ -80,8 +74,6 @@ function formatTime(date: Date): string {
 }
 
 function isMessageFromMe(message: Message, currentUserId: string): boolean {
-  // UUID comparison is authoritative — eliminates name-matching false positives when
-  // two users share a display name
   return message.userId === currentUserId;
 }
 
