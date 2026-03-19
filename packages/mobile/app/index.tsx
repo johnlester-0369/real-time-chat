@@ -19,7 +19,7 @@ import {
   View, Text, TextInput, ScrollView,
   KeyboardAvoidingView, Platform, StyleSheet, Keyboard,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack } from 'expo-router';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -38,12 +38,14 @@ import IconButton from '@/components/ui/buttons/IconButton';
 const IDENTITY_KEY = 'chat_identity';
 const USER_COLOR: UserColor = 'info';
 
+// How close to the bottom (px) counts as "at bottom".
+// Large enough to absorb sub-pixel rounding; small enough not to misfire mid-list.
+const BOTTOM_THRESHOLD = 40;
+
 // ============================================================================
 // UUID
 // ============================================================================
 
-// crypto.randomUUID() is browser-only — Hermes doesn't expose the Web Crypto API.
-// This RFC 4122 v4 implementation is sufficient for stable per-device user identity.
 function uuidv4(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
     const r = (Math.random() * 16) | 0;
@@ -55,12 +57,6 @@ function uuidv4(): string {
 // HELPERS
 // ============================================================================
 
-/**
- * Reads persisted identity from AsyncStorage.
- * Mobile equivalent of web's getUrlIdentity() — AsyncStorage replaces URL params
- * because deep-link URL params in Expo require expo-linking setup and don't
- * survive all navigation patterns the way a persistent key-value store does.
- */
 async function getStoredIdentity(): Promise<{ userId: string; name: string } | null> {
   try {
     const raw = await AsyncStorage.getItem(IDENTITY_KEY);
@@ -78,8 +74,6 @@ function formatTime(date: Date): string {
 }
 
 function isMessageFromMe(message: Message, currentUserId: string): boolean {
-  // UUID comparison is authoritative — eliminates name-matching false positives when
-  // two users share a display name
   return message.userId === currentUserId;
 }
 
@@ -91,21 +85,58 @@ export default function Index() {
   const { colors, tokens, rgba, colorScheme, toggleColorScheme } = useTheme();
   const [draft, setDraft] = useState('');
   const [identity, setIdentity] = useState<{ userId: string; name: string } | null>(null);
-  // Prevent flash of NameEntryScreen before AsyncStorage read completes
   const [identityLoaded, setIdentityLoaded] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
-  // Tracks the current scroll offset so keyboard open/close can compensate
-  // with the exact keyboard height delta — preserves reading position
+
+  // ── Scroll measurement refs ──────────────────────────────────────────────
+  //
+  // Three refs give us a complete, always-fresh picture of the ScrollView state:
+  //
+  //   scrollOffset  — updated by onScroll (user drags) AND manually after every
+  //                   programmatic scrollTo. scrollTo(animated:false) does NOT
+  //                   fire onScroll in RN, so we write to this ref ourselves
+  //                   after every programmatic scroll to keep it honest.
+  //
+  //   contentHeight — updated by onContentSizeChange. Never goes stale because
+  //                   RN fires this whenever content height changes.
+  //
+  //   layoutHeight  — updated by onLayout. Reflects the current visible viewport
+  //                   height of the ScrollView, which changes whenever KAV
+  //                   resizes it (keyboard open/close).
+  //
+  // computeIsAtBottom() derives the answer fresh from all three at call time —
+  // no cached boolean ref that can go stale between events.
+  //
+  // WHY NOT JUST USE A BOOLEAN REF:
+  //   The previous approach stored isAtBottom as a ref and read it in keyboard
+  //   listeners. It went wrong because:
+  //   1. Keyboard open  → scrollToEnd fires → onScroll overwrites scrollOffset
+  //   2. Keyboard close → scrollTo(animated:false) restores position visually
+  //                       BUT onScroll does NOT fire → scrollOffset stays at
+  //                       the post-scrollToEnd value
+  //   3. isAtBottom ref also stays wrong (true) because onScroll never corrected it
+  //   4. Keyboard opens again → snapshots the wrong scrollOffset → wrong branch
+  //
+  // With three measured refs + a fresh compute function, none of that is possible.
+
   const scrollOffset = useRef(0);
-  // Stores the last known keyboard height so dismiss can subtract the same
-  // value that was added on open — avoids drift from slightly different heights
-  const lastKeyboardHeight = useRef(0);
-  // 'height' while IME is open so KAV cooperates with Android's resize pass;
-  // undefined after dismiss so KAV's reset doesn't race the system layout restore
+  const contentHeight = useRef(0);
+  const layoutHeight = useRef(0);
+
+  // Snapshot taken at keyboard-open time, used to restore on dismiss.
+  const preKeyboardOffset = useRef(0);
+  // Whether the user was at the bottom when the keyboard opened.
+  // Determines dismiss strategy: scrollToEnd vs restore-offset.
+  const preKeyboardWasAtBottom = useRef(true);
+
+  // 'height' while IME is open so KAV cooperates with Android's resize pass
   const [kavBehavior, setKavBehavior] = useState<'height' | undefined>(undefined);
 
-  // Load persisted identity once on mount — AsyncStorage is async so we render
-  // nothing until it resolves, matching web's synchronous URL param read pattern
+  // Fresh bottom check — computed from live measurements, never stale
+  function computeIsAtBottom(): boolean {
+    return contentHeight.current - layoutHeight.current - scrollOffset.current < BOTTOM_THRESHOLD;
+  }
+
   useEffect(() => {
     getStoredIdentity()
       .then(stored => setIdentity(stored))
@@ -116,69 +147,115 @@ export default function Index() {
     identity ? { userId: identity.userId, name: identity.name, color: USER_COLOR } : null,
   );
 
-  // Scroll to bottom when new messages arrive — same behaviour as web's bottomRef.scrollIntoView
+  // Scroll to bottom on new messages
   useEffect(() => {
     if (messages.length > 0) {
-      // requestAnimationFrame-equivalent delay lets RN finish the layout pass before scrolling
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
     }
   }, [messages.length]);
 
-  // Scroll anchoring — compensate scroll position by the keyboard height on both
-  // open and close so the user's reading position stays in view.
+  // ── Keyboard scroll anchoring ────────────────────────────────────────────
   //
-  // On open:  scroll DOWN by keyboard height (viewport shrinks, content appears to shift up)
-  // On close: scroll UP by the same stored height (viewport grows, content appears to shift down)
+  // OPEN STRATEGY (same for both platforms):
   //
-  // lastKeyboardHeight stores the exact height used on open so the dismiss subtracts
-  // the same value — prevents drift if the OS reports slightly different heights between events.
+  //   1. Snapshot scrollOffset → preKeyboardOffset (before any scroll mutates it)
+  //   2. Call computeIsAtBottom() fresh using all three measured refs
+  //   3. At bottom  → deferred scrollToEnd so it runs AFTER KAV finishes its
+  //                   layout pass. Synchronous call sees the old viewport size
+  //                   and moves nothing. The defer is load-bearing.
+  //      Mid-list   → synchronous scrollTo(offset + kbHeight). Pure arithmetic,
+  //                   does not depend on post-layout dimensions. Then manually
+  //                   write the new value back to scrollOffset so the ref stays
+  //                   accurate (scrollTo animated:false won't fire onScroll).
   //
-  // Android: keyboardDidShow/Hide fires after softwareKeyboardLayoutMode resize pass,
-  //          so KAV layout is settled before we scroll.
-  // iOS:     keyboardWillShow/Hide fires before animation — animated:false keeps
-  //          the scroll in sync with the keyboard animation visually.
+  // CLOSE STRATEGY:
+  //
+  //   Was at bottom → deferred scrollToEnd. Viewport is expanding back; the
+  //                   content needs to follow the new bottom edge. Same timing
+  //                   reason as open — wait for KAV to finish restoring layout.
+  //   Was mid-list  → synchronous scrollTo(preKeyboardOffset) + manual ref sync.
+  //                   Restores exactly where the user was reading.
+  //
+  // KEY INSIGHT — why "recalculate on every event":
+  //   Every keyboard event recomputes isAtBottom from fresh measurements instead
+  //   of reading a potentially-stale cached ref. This means even if a previous
+  //   scrollTo(animated:false) failed to fire onScroll (and it often does), the
+  //   next keyboard event still gets the right answer because contentHeight and
+  //   layoutHeight are always up to date, and we manually sync scrollOffset after
+  //   every programmatic scroll.
+
   useEffect(() => {
     if (Platform.OS === 'android') {
       const show = Keyboard.addListener('keyboardDidShow', (e) => {
         const kbHeight = e.endCoordinates.height;
-        lastKeyboardHeight.current = kbHeight;
+        // Snapshot before any scroll runs
+        preKeyboardOffset.current = scrollOffset.current;
+        // Fresh calculation — not a cached ref
+        const atBottom = computeIsAtBottom();
+        preKeyboardWasAtBottom.current = atBottom;
+        // State update triggers re-render; scrollToEnd must wait for it to commit
         setKavBehavior('height');
-        scrollRef.current?.scrollTo({
-          y: scrollOffset.current + kbHeight,
-          animated: false,
-        });
+        if (atBottom) {
+          setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 100);
+        } else {
+          const target = scrollOffset.current + kbHeight;
+          scrollRef.current?.scrollTo({ y: target, animated: false });
+          // Manually sync — scrollTo(animated:false) won't fire onScroll
+          scrollOffset.current = target;
+        }
       });
+
       const hide = Keyboard.addListener('keyboardDidHide', () => {
         setKavBehavior(undefined);
-        scrollRef.current?.scrollTo({
-          y: Math.max(0, scrollOffset.current - lastKeyboardHeight.current),
-          animated: false,
-        });
+        if (preKeyboardWasAtBottom.current) {
+          // Viewport just expanded — chase the new bottom edge
+          setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 100);
+        } else {
+          const target = preKeyboardOffset.current;
+          scrollRef.current?.scrollTo({ y: target, animated: false });
+          // Manually sync — scrollTo(animated:false) won't fire onScroll
+          scrollOffset.current = target;
+        }
       });
+
       return () => { show.remove(); hide.remove(); };
     } else {
       const show = Keyboard.addListener('keyboardWillShow', (e) => {
         const kbHeight = e.endCoordinates.height;
-        lastKeyboardHeight.current = kbHeight;
-        scrollRef.current?.scrollTo({
-          y: scrollOffset.current + kbHeight,
-          animated: false,
-        });
+        // Snapshot before any scroll runs
+        preKeyboardOffset.current = scrollOffset.current;
+        // Fresh calculation — not a cached ref
+        const atBottom = computeIsAtBottom();
+        preKeyboardWasAtBottom.current = atBottom;
+        if (atBottom) {
+          // Wait for KAV padding layout to commit before scrolling
+          setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 50);
+        } else {
+          const target = scrollOffset.current + kbHeight;
+          scrollRef.current?.scrollTo({ y: target, animated: false });
+          // Manually sync — scrollTo(animated:false) won't fire onScroll
+          scrollOffset.current = target;
+        }
       });
+
       const hide = Keyboard.addListener('keyboardWillHide', () => {
-        scrollRef.current?.scrollTo({
-          y: Math.max(0, scrollOffset.current - lastKeyboardHeight.current),
-          animated: false,
-        });
+        if (preKeyboardWasAtBottom.current) {
+          // Viewport just expanded — chase the new bottom edge
+          setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 50);
+        } else {
+          const target = preKeyboardOffset.current;
+          scrollRef.current?.scrollTo({ y: target, animated: false });
+          // Manually sync — scrollTo(animated:false) won't fire onScroll
+          scrollOffset.current = target;
+        }
       });
+
       return () => { show.remove(); hide.remove(); };
     }
   }, []);
 
   async function handleNameSubmit(name: string) {
     const userId = uuidv4();
-    // Persist identity so screen restores session on next app launch —
-    // replaces web's replaceState(null, '', `?${params}`) URL persistence
     await AsyncStorage.setItem(IDENTITY_KEY, JSON.stringify({ userId, name }));
     setIdentity({ userId, name });
   }
@@ -190,15 +267,11 @@ export default function Index() {
     setDraft('');
   }
 
-  // Render nothing until AsyncStorage read resolves to prevent NameEntryScreen flash
   if (!identityLoaded) return null;
 
   if (!identity) {
     return (
       <>
-        {/* Suppress the expo-router "index" header — NameEntryScreen is a full-screen
-            entry gate with no navigation chrome; without this, the route filename
-            "index" appears as the Stack title before identity is established */}
         <Stack.Screen options={{ headerShown: false }} />
         <NameEntryScreen
           onNameSubmit={handleNameSubmit}
@@ -213,11 +286,8 @@ export default function Index() {
 
   return (
     <View style={[styles.root, { backgroundColor: rgba(colors.surface) }]}>
-      {/* Suppress expo-router's default header — chat renders its own */}
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* 'bottom' edge handles nav-bar clearance at the container level so nothing
-          inside KAV needs inset math — prevents inset/KAV resize-pass conflicts */}
       <SafeAreaView style={styles.flex} edges={['top', 'left', 'right', 'bottom']}>
 
         {/* ── Connection Status Banners ── */}
@@ -279,8 +349,6 @@ export default function Index() {
         {/* ── Messages + Input ── */}
         <KeyboardAvoidingView
           style={styles.flex}
-          // iOS: 'padding' as before. Android: dynamic — 'height' while IME open, undefined after
-          // dismiss so KAV's reset doesn't race the system softwareKeyboardLayoutMode resize pass
           behavior={Platform.OS === 'ios' ? 'padding' : kavBehavior}
           keyboardVerticalOffset={0}
         >
@@ -291,18 +359,30 @@ export default function Index() {
             contentContainerStyle={styles.messageList}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
-            // Track scroll position so keyboard open/close can compensate with the
-            // exact offset delta — preserves reading position in both directions
-            onScroll={(e) => { scrollOffset.current = e.nativeEvent.contentOffset.y; }}
+            // onScroll — fires for user drags and animated programmatic scrolls.
+            // Does NOT fire for scrollTo(animated:false), which is why we manually
+            // write scrollOffset.current after every programmatic scroll below.
+            onScroll={(e) => {
+              scrollOffset.current = e.nativeEvent.contentOffset.y;
+            }}
             scrollEventThrottle={16}
+            // onContentSizeChange — always fires when content height changes.
+            // Gives us fresh contentHeight without needing an onScroll event.
+            onContentSizeChange={(_w, h) => {
+              contentHeight.current = h;
+            }}
+            // onLayout — fires whenever the ScrollView's viewport dimensions change,
+            // including when KAV resizes it on keyboard open/close.
+            // Gives us fresh layoutHeight to compute isAtBottom accurately.
+            onLayout={(e) => {
+              layoutHeight.current = e.nativeEvent.layout.height;
+            }}
           >
             {messages.map((msg, idx) => {
               const isMe = isMessageFromMe(msg, identity.userId);
               const prevUserId = idx > 0 ? messages[idx - 1]?.userId : null;
               const isGrouped = prevUserId === msg.userId;
 
-              // System events (join/leave) render as centered muted text —
-              // same treatment as web to avoid visually competing with user messages
               if (msg.userId === 'system') {
                 return (
                   <Text
@@ -322,7 +402,6 @@ export default function Index() {
                   key={msg.id}
                   style={[styles.messageRow, isMe ? styles.messageRowMe : styles.messageRowOther]}
                 >
-                  {/* Avatar slot — 32px wide to match web's `w-8` */}
                   <View style={[styles.avatarSlot, isMe ? styles.avatarSlotMe : styles.avatarSlotOther]}>
                     {!isGrouped && (
                       <Avatar.Root
@@ -336,7 +415,6 @@ export default function Index() {
                     )}
                   </View>
 
-                  {/* Bubble column */}
                   <View style={[styles.bubbleCol, isMe ? styles.bubbleColMe : styles.bubbleColOther]}>
                     {!isGrouped && (
                       <View style={[styles.senderRow, isMe ? styles.senderRowMe : styles.senderRowOther]}>
@@ -359,7 +437,7 @@ export default function Index() {
                         styles.bubbleText,
                         isMe
                           ? { color: rgba(colors.onPrimary), ...tokens.typography.bodyMedium }
-                          : { color: rgba(colors.onSurface),  ...tokens.typography.bodyMedium },
+                          : { color: rgba(colors.onSurface), ...tokens.typography.bodyMedium },
                       ]}>
                         {msg.text}
                       </Text>
@@ -377,8 +455,6 @@ export default function Index() {
           </ScrollView>
 
           {/* ── Input bar ── */}
-          {/* Bottom inset is handled by SafeAreaView 'bottom' edge above — no paddingBottom
-              here to avoid conflicting with KAV's resize-pass height calculations */}
           <View style={{ backgroundColor: rgba(colors.surface) }}>
             <View style={[styles.inputBar, { borderTopColor: rgba(colors.outlineVariant) }]}>
               <View style={[
