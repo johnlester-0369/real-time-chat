@@ -38,12 +38,14 @@ import IconButton from '@/components/ui/buttons/IconButton';
 const IDENTITY_KEY = 'chat_identity';
 const USER_COLOR: UserColor = 'info';
 
+// How close to the bottom (px) counts as "at bottom".
+// Large enough to absorb sub-pixel rounding; small enough not to misfire mid-list.
+const BOTTOM_THRESHOLD = 40;
+
 // ============================================================================
 // UUID
 // ============================================================================
 
-// crypto.randomUUID() is browser-only — Hermes doesn't expose the Web Crypto API.
-// This RFC 4122 v4 implementation is sufficient for stable per-device user identity.
 function uuidv4(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
     const r = (Math.random() * 16) | 0;
