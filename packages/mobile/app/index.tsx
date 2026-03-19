@@ -155,69 +155,115 @@ export default function Index() {
     identity ? { userId: identity.userId, name: identity.name, color: USER_COLOR } : null,
   );
 
-  // Scroll to bottom when new messages arrive — same behaviour as web's bottomRef.scrollIntoView
+  // Scroll to bottom on new messages
   useEffect(() => {
     if (messages.length > 0) {
-      // requestAnimationFrame-equivalent delay lets RN finish the layout pass before scrolling
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
     }
   }, [messages.length]);
 
-  // Scroll anchoring — compensate scroll position by the keyboard height on both
-  // open and close so the user's reading position stays in view.
+  // ── Keyboard scroll anchoring ────────────────────────────────────────────
   //
-  // On open:  scroll DOWN by keyboard height (viewport shrinks, content appears to shift up)
-  // On close: scroll UP by the same stored height (viewport grows, content appears to shift down)
+  // OPEN STRATEGY (same for both platforms):
   //
-  // lastKeyboardHeight stores the exact height used on open so the dismiss subtracts
-  // the same value — prevents drift if the OS reports slightly different heights between events.
+  //   1. Snapshot scrollOffset → preKeyboardOffset (before any scroll mutates it)
+  //   2. Call computeIsAtBottom() fresh using all three measured refs
+  //   3. At bottom  → deferred scrollToEnd so it runs AFTER KAV finishes its
+  //                   layout pass. Synchronous call sees the old viewport size
+  //                   and moves nothing. The defer is load-bearing.
+  //      Mid-list   → synchronous scrollTo(offset + kbHeight). Pure arithmetic,
+  //                   does not depend on post-layout dimensions. Then manually
+  //                   write the new value back to scrollOffset so the ref stays
+  //                   accurate (scrollTo animated:false won't fire onScroll).
   //
-  // Android: keyboardDidShow/Hide fires after softwareKeyboardLayoutMode resize pass,
-  //          so KAV layout is settled before we scroll.
-  // iOS:     keyboardWillShow/Hide fires before animation — animated:false keeps
-  //          the scroll in sync with the keyboard animation visually.
+  // CLOSE STRATEGY:
+  //
+  //   Was at bottom → deferred scrollToEnd. Viewport is expanding back; the
+  //                   content needs to follow the new bottom edge. Same timing
+  //                   reason as open — wait for KAV to finish restoring layout.
+  //   Was mid-list  → synchronous scrollTo(preKeyboardOffset) + manual ref sync.
+  //                   Restores exactly where the user was reading.
+  //
+  // KEY INSIGHT — why "recalculate on every event":
+  //   Every keyboard event recomputes isAtBottom from fresh measurements instead
+  //   of reading a potentially-stale cached ref. This means even if a previous
+  //   scrollTo(animated:false) failed to fire onScroll (and it often does), the
+  //   next keyboard event still gets the right answer because contentHeight and
+  //   layoutHeight are always up to date, and we manually sync scrollOffset after
+  //   every programmatic scroll.
+
   useEffect(() => {
     if (Platform.OS === 'android') {
       const show = Keyboard.addListener('keyboardDidShow', (e) => {
         const kbHeight = e.endCoordinates.height;
-        lastKeyboardHeight.current = kbHeight;
+        // Snapshot before any scroll runs
+        preKeyboardOffset.current = scrollOffset.current;
+        // Fresh calculation — not a cached ref
+        const atBottom = computeIsAtBottom();
+        preKeyboardWasAtBottom.current = atBottom;
+        // State update triggers re-render; scrollToEnd must wait for it to commit
         setKavBehavior('height');
-        scrollRef.current?.scrollTo({
-          y: scrollOffset.current + kbHeight,
-          animated: false,
-        });
+        if (atBottom) {
+          setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 100);
+        } else {
+          const target = scrollOffset.current + kbHeight;
+          scrollRef.current?.scrollTo({ y: target, animated: false });
+          // Manually sync — scrollTo(animated:false) won't fire onScroll
+          scrollOffset.current = target;
+        }
       });
+
       const hide = Keyboard.addListener('keyboardDidHide', () => {
         setKavBehavior(undefined);
-        scrollRef.current?.scrollTo({
-          y: Math.max(0, scrollOffset.current - lastKeyboardHeight.current),
-          animated: false,
-        });
+        if (preKeyboardWasAtBottom.current) {
+          // Viewport just expanded — chase the new bottom edge
+          setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 100);
+        } else {
+          const target = preKeyboardOffset.current;
+          scrollRef.current?.scrollTo({ y: target, animated: false });
+          // Manually sync — scrollTo(animated:false) won't fire onScroll
+          scrollOffset.current = target;
+        }
       });
+
       return () => { show.remove(); hide.remove(); };
     } else {
       const show = Keyboard.addListener('keyboardWillShow', (e) => {
         const kbHeight = e.endCoordinates.height;
-        lastKeyboardHeight.current = kbHeight;
-        scrollRef.current?.scrollTo({
-          y: scrollOffset.current + kbHeight,
-          animated: false,
-        });
+        // Snapshot before any scroll runs
+        preKeyboardOffset.current = scrollOffset.current;
+        // Fresh calculation — not a cached ref
+        const atBottom = computeIsAtBottom();
+        preKeyboardWasAtBottom.current = atBottom;
+        if (atBottom) {
+          // Wait for KAV padding layout to commit before scrolling
+          setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 50);
+        } else {
+          const target = scrollOffset.current + kbHeight;
+          scrollRef.current?.scrollTo({ y: target, animated: false });
+          // Manually sync — scrollTo(animated:false) won't fire onScroll
+          scrollOffset.current = target;
+        }
       });
+
       const hide = Keyboard.addListener('keyboardWillHide', () => {
-        scrollRef.current?.scrollTo({
-          y: Math.max(0, scrollOffset.current - lastKeyboardHeight.current),
-          animated: false,
-        });
+        if (preKeyboardWasAtBottom.current) {
+          // Viewport just expanded — chase the new bottom edge
+          setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 50);
+        } else {
+          const target = preKeyboardOffset.current;
+          scrollRef.current?.scrollTo({ y: target, animated: false });
+          // Manually sync — scrollTo(animated:false) won't fire onScroll
+          scrollOffset.current = target;
+        }
       });
+
       return () => { show.remove(); hide.remove(); };
     }
   }, []);
 
   async function handleNameSubmit(name: string) {
     const userId = uuidv4();
-    // Persist identity so screen restores session on next app launch —
-    // replaces web's replaceState(null, '', `?${params}`) URL persistence
     await AsyncStorage.setItem(IDENTITY_KEY, JSON.stringify({ userId, name }));
     setIdentity({ userId, name });
   }
